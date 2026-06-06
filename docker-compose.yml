@@ -1,0 +1,18 @@
+# Base de datos PostgreSQL para desarrollo local.
+# Uso: docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: geniusdb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: genius
+      POSTGRES_PASSWORD: genius
+      POSTGRES_DB: geniusschool
+    ports:
+      - "5433:5432"
+    volumes:
+      - genius_pgdata:/var/lib/postgresql/data
+
+volumes:
+  genius_pgdata:
