@@ -1,6 +1,6 @@
 import type { EstadoCita, Asistencia, TipoCita } from "@prisma/client";
 
-/* ── Semana (lunes–sábado) ────────────────────────────── */
+/* ── Semana (lunes–domingo) ───────────────────────────── */
 
 /** Lunes de la semana que contiene `d`, a medianoche local. */
 export function lunesDeLaSemana(d: Date): Date {
@@ -42,11 +42,12 @@ export const DIAS_SEMANA = [
   "Jueves",
   "Viernes",
   "Sábado",
+  "Domingo",
 ] as const;
 
-/** Devuelve los 6 días (Lun–Sáb) a partir del lunes dado. */
+/** Devuelve los 7 días (Lun–Dom) a partir del lunes dado. */
 export function diasDeLaSemana(lunes: Date): Date[] {
-  return Array.from({ length: 6 }, (_, i) => sumarDias(lunes, i));
+  return Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i));
 }
 
 /* ── Etiquetas y colores ──────────────────────────────── */

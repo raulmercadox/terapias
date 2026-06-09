@@ -36,7 +36,7 @@ export default async function AgendaPage({
   const lunes = lunesDeLaSemana(parseFechaISO(semana) ?? new Date());
   const dias = diasDeLaSemana(lunes);
   const rangoInicio = new Date(lunes);
-  const rangoFin = sumarDias(lunes, 6); // domingo (exclusivo)
+  const rangoFin = sumarDias(lunes, 7); // lunes siguiente (exclusivo) → incluye domingo
 
   const semanaAnterior = aISO(sumarDias(lunes, -7));
   const semanaSiguiente = aISO(sumarDias(lunes, 7));
@@ -87,7 +87,7 @@ export default async function AgendaPage({
     <div className="space-y-6">
       <PageHeader
         title="Agenda"
-        subtitle={`Semana del ${fecha(lunes)} al ${fecha(dias[5])}`}
+        subtitle={`Semana del ${fecha(lunes)} al ${fecha(dias[6])}`}
         actions={<ButtonLink href="/citas/nueva">Nueva cita</ButtonLink>}
       />
 

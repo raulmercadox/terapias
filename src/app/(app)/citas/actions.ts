@@ -232,12 +232,26 @@ export async function registrarSeguimiento(
   });
   if (!parsed.success) return { error: "Datos inválidos." };
 
-  await prisma.cita.update({
-    where: { id },
-    data: {
-      terapiaRealizada: parsed.data.terapiaRealizada ?? null,
-      observacion: parsed.data.observacion ?? null,
-    },
+  const nuevaObservacion = parsed.data.observacion?.trim();
+
+  // "Terapia realizada" sigue siendo un campo editable de la sesión.
+  // La "Observación" en cambio se agrega como una entrada de historial
+  // inmutable (no se sobrescribe la anterior).
+  await prisma.$transaction(async (tx) => {
+    await tx.cita.update({
+      where: { id },
+      data: { terapiaRealizada: parsed.data.terapiaRealizada ?? null },
+    });
+
+    if (nuevaObservacion) {
+      await tx.observacionSesion.create({
+        data: {
+          citaId: id,
+          texto: nuevaObservacion,
+          autor: user.nombre ?? null,
+        },
+      });
+    }
   });
 
   revalidatePath(`/citas/${id}`);

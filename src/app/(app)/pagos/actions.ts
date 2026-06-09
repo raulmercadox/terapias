@@ -38,10 +38,6 @@ const pagoSchema = z.object({
   monto: z.coerce
     .number()
     .refine((n) => Number.isFinite(n) && n > 0, "El monto debe ser mayor a 0."),
-  saldo: z.coerce
-    .number()
-    .refine((n) => Number.isFinite(n) && n >= 0, "El saldo no puede ser negativo.")
-    .default(0),
   metodoPago: z.enum(METODOS),
   referencia: z
     .string()
@@ -86,7 +82,6 @@ export async function registrarPago(
     concepto: formData.get("concepto"),
     descripcion: formData.get("descripcion") ?? undefined,
     monto: formData.get("monto"),
-    saldo: formData.get("saldo") ?? 0,
     metodoPago: formData.get("metodoPago"),
     referencia: formData.get("referencia") ?? undefined,
     fechaPago: formData.get("fechaPago"),
@@ -145,6 +140,26 @@ export async function registrarPago(
       const siguiente = ultimo ? numeroDeRecibo(ultimo.numeroRecibo, prefijo) + 1 : 1;
       const numeroRecibo = `${prefijo}-${String(siguiente).padStart(6, "0")}`;
 
+      // Saldo automático: si el pago se vincula a un paquete, es lo que queda por
+      // pagar de su precio (precio − pagos previos − este monto), nunca < 0.
+      // Sin paquete vinculado no hay total de referencia, por lo que el saldo es 0.
+      let saldo = 0;
+      if (data.paqueteId) {
+        const [paq, agg] = await Promise.all([
+          tx.paquete.findUnique({
+            where: { id: data.paqueteId },
+            select: { precio: true },
+          }),
+          tx.pago.aggregate({
+            where: { paqueteId: data.paqueteId },
+            _sum: { monto: true },
+          }),
+        ]);
+        const precio = Number(paq?.precio ?? 0);
+        const pagado = Number(agg._sum.monto ?? 0);
+        saldo = Math.max(0, Math.round((precio - pagado - data.monto) * 100) / 100);
+      }
+
       const creado = await tx.pago.create({
         data: {
           sedeId,
@@ -154,7 +169,7 @@ export async function registrarPago(
           concepto: data.concepto,
           descripcion: data.descripcion,
           monto: data.monto,
-          saldo: data.saldo,
+          saldo,
           metodoPago: data.metodoPago,
           referencia: data.referencia,
           fechaPago: fecha,

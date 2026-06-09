@@ -1,25 +1,44 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Textarea } from "@/components/ui";
+import { fechaHora } from "@/lib/utils";
 import { registrarSeguimiento, type FormState } from "./actions";
+
+export type ObservacionVista = {
+  id: string;
+  texto: string;
+  autor: string | null;
+  createdAt: string; // ISO
+};
 
 export function SeguimientoForm({
   citaId,
   terapiaRealizada,
-  observacion,
+  observaciones,
 }: {
   citaId: string;
   terapiaRealizada: string | null;
-  observacion: string | null;
+  observaciones: ObservacionVista[];
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     registrarSeguimiento,
     undefined,
   );
 
+  const [nuevaObservacion, setNuevaObservacion] = useState("");
+
+  // Limpia el campo de nueva observación tras un registro exitoso.
+  const prevPending = useRef(pending);
+  useEffect(() => {
+    if (prevPending.current && !pending && !state?.error) {
+      setNuevaObservacion("");
+    }
+    prevPending.current = pending;
+  }, [pending, state]);
+
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className="space-y-5">
       <input type="hidden" name="id" value={citaId} />
 
       <Field label="Terapia realizada">
@@ -30,11 +49,43 @@ export function SeguimientoForm({
         />
       </Field>
 
-      <Field label="Observación">
+      {/* Historial de observaciones (solo lectura) */}
+      <div className="space-y-2">
+        <p className="block text-sm font-medium text-slate-700">
+          Historial de observaciones
+        </p>
+        {observaciones.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm text-slate-400">
+            Aún no hay observaciones registradas.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {observaciones.map((o) => (
+              <li
+                key={o.id}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+              >
+                <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                  <span className="font-medium text-slate-600">
+                    {o.autor ?? "—"}
+                  </span>
+                  <time dateTime={o.createdAt}>{fechaHora(o.createdAt)}</time>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
+                  {o.texto}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Field label="Agregar observación">
         <Textarea
           name="observacion"
-          defaultValue={observacion ?? ""}
-          placeholder="Notas adicionales…"
+          value={nuevaObservacion}
+          onChange={(e) => setNuevaObservacion(e.target.value)}
+          placeholder="Escribe una nueva observación. Quedará registrada con fecha y hora y no podrá editarse."
         />
       </Field>
 

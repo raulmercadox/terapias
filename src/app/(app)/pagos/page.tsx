@@ -61,11 +61,17 @@ function fechaParam(valor: string | undefined, esFin = false): Date | null {
 export default async function PagosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; desde?: string; hasta?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    desde?: string;
+    hasta?: string;
+    q?: string;
+  }>;
 }) {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
   const sp = await searchParams;
+  const termino = (sp.q ?? "").trim();
 
   // Filtro: si hay desde/hasta toma prioridad el rango; si no, por mes.
   const desdeParam = fechaParam(sp.desde);
@@ -91,8 +97,22 @@ export default async function PagosPage({
     }).format(rango!.desde);
   }
 
+  // Búsqueda por paciente (nombre, apellidos o DNI), insensible a mayúsculas.
+  const pacienteFilter = termino
+    ? {
+        paciente: {
+          OR: [
+            { nombres: { contains: termino, mode: "insensitive" as const } },
+            { apellidoPaterno: { contains: termino, mode: "insensitive" as const } },
+            { apellidoMaterno: { contains: termino, mode: "insensitive" as const } },
+            { dni: { contains: termino, mode: "insensitive" as const } },
+          ],
+        },
+      }
+    : {};
+
   const pagos = await prisma.pago.findMany({
-    where: { sedeId, fechaPago: fechaFilter },
+    where: { sedeId, fechaPago: fechaFilter, ...pacienteFilter },
     orderBy: { fechaPago: "desc" },
     select: {
       id: true,
@@ -125,6 +145,18 @@ export default async function PagosPage({
 
       <Card>
         <form method="get" className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">
+              Paciente
+            </span>
+            <input
+              type="search"
+              name="q"
+              defaultValue={termino}
+              placeholder="Buscar por nombre o DNI…"
+              className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Mes</span>
             <input
@@ -169,7 +201,13 @@ export default async function PagosPage({
       </Card>
 
       {pagos.length === 0 ? (
-        <EmptyState message="No hay pagos registrados en este periodo." />
+        <EmptyState
+          message={
+            termino
+              ? `No se encontraron pagos de "${termino}" en este periodo. Prueba ampliar el rango de fechas.`
+              : "No hay pagos registrados en este periodo."
+          }
+        />
       ) : (
         <>
           <Table>

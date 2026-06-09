@@ -8,10 +8,12 @@ const initial: ActionState = { ok: false };
 
 type Opcion = { id: string; nombre: string };
 
-function hoyISO(): string {
+// Hoy a las 09:00 (hora local) en formato "YYYY-MM-DDTHH:mm" para datetime-local.
+function inicioPorDefecto(): string {
   const d = new Date();
+  d.setHours(9, 0, 0, 0);
   const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 10);
+  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 16);
 }
 
 export default function NuevoPaqueteForm({
@@ -86,8 +88,13 @@ export default function NuevoPaqueteForm({
             required
           />
         </Field>
-        <Field label="Fecha de inicio" required>
-          <Input type="date" name="fechaInicio" defaultValue={hoyISO()} required />
+        <Field label="Fecha y hora de inicio" required>
+          <Input
+            type="datetime-local"
+            name="fechaInicio"
+            defaultValue={inicioPorDefecto()}
+            required
+          />
         </Field>
       </div>
 

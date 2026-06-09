@@ -24,6 +24,39 @@ function parseFecha(value: unknown): Date | null {
   return new Date(y, m - 1, d, 0, 0, 0, 0);
 }
 
+/**
+ * Parsea un valor de `datetime-local` ("YYYY-MM-DDTHH:mm") devolviendo la fecha
+ * anclada a medianoche local (las fechas de sesión se calculan sin hora) y la
+ * hora como string "HH:mm". Si no trae hora, usa 09:00 por defecto.
+ */
+function parseFechaHora(
+  value: unknown,
+): { fecha: Date; horaInicio: string } | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(value.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!y || !mo || !d) return null;
+  const fecha = new Date(y, mo - 1, d, 0, 0, 0, 0);
+  if (Number.isNaN(fecha.getTime())) return null;
+  const horaInicio = `${m[4] ?? "09"}:${m[5] ?? "00"}`;
+  return { fecha, horaInicio };
+}
+
+/** Suma `mins` minutos a una hora "HH:mm" (mismo día; se asume duración corta). */
+function sumarMinutos(hhmm: string, mins: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = (h * 60 + m + mins) % (24 * 60);
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/** Duración por defecto de una sesión, en minutos. */
+const DURACION_SESION_MIN = 45;
+
 /* ── crearPaquete ────────────────────────────────────────── */
 
 const crearPaqueteSchema = z.object({
@@ -60,8 +93,10 @@ export async function crearPaquete(
   }
   const data = parsed.data;
 
-  const fechaInicio = parseFecha(data.fechaInicio);
-  if (!fechaInicio) return { ok: false, error: "Fecha de inicio inválida." };
+  const inicio = parseFechaHora(data.fechaInicio);
+  if (!inicio) return { ok: false, error: "Fecha de inicio inválida." };
+  const { fecha: fechaInicio, horaInicio } = inicio;
+  const horaFin = sumarMinutos(horaInicio, DURACION_SESION_MIN);
 
   // El paciente debe pertenecer a la sede y estar activo.
   const paciente = await prisma.paciente.findFirst({
@@ -112,6 +147,8 @@ export async function crearPaquete(
         totalSesiones: data.totalSesiones,
         frecuenciaSemana: data.frecuenciaSemana,
         fechaInicio,
+        horaInicio,
+        horaFin,
       }),
     });
   });
@@ -376,13 +413,28 @@ export async function renovarPaquete(
   if (!origen) return { ok: false, error: "Paquete no encontrado." };
   assertSedeAccess(user, origen.sedeId);
 
-  // Terapeuta por defecto: el de la última sesión del paquete origen (si hay).
+  // Solo se puede renovar si TODAS las sesiones del paquete actual ya tienen
+  // asistencia registrada (no quedan pendientes). Evita crear un paquete nuevo
+  // sin haber culminado el anterior.
+  const pendientes = await prisma.cita.count({
+    where: { paqueteId, tipo: "SESION", asistencia: "PENDIENTE" },
+  });
+  if (pendientes > 0) {
+    return {
+      ok: false,
+      error: `No puedes renovar: aún hay ${pendientes} sesión(es) sin asistencia registrada en este paquete.`,
+    };
+  }
+
+  // Terapeuta y horario por defecto: los de la última sesión del paquete origen.
   const ultima = await prisma.cita.findFirst({
     where: { paqueteId },
     orderBy: { numeroSesion: "desc" },
-    select: { terapeutaId: true },
+    select: { terapeutaId: true, horaInicio: true, horaFin: true },
   });
   const terapeutaId = ultima?.terapeutaId ?? null;
+  const horaInicio = ultima?.horaInicio;
+  const horaFin = ultima?.horaFin;
 
   // La renovación inicia hoy.
   const fechaInicio = new Date();
@@ -420,6 +472,8 @@ export async function renovarPaquete(
         totalSesiones: origen.totalSesiones,
         frecuenciaSemana: origen.frecuenciaSemana,
         fechaInicio,
+        horaInicio,
+        horaFin,
       }),
     });
   });

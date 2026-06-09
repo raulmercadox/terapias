@@ -131,12 +131,19 @@ export default function PaqueteAcciones({
           type="submit"
           variant="primary"
           className="w-full"
-          disabled={renovPending}
+          disabled={renovPending || !todasRegistradas}
+          title={
+            todasRegistradas
+              ? undefined
+              : "Disponible cuando todas las sesiones tengan asistencia registrada."
+          }
         >
           {renovPending ? "Renovando…" : "Renovar"}
         </Button>
         <p className="mt-1 text-xs text-slate-400">
-          Crea un paquete nuevo idéntico para el mismo paciente.
+          {todasRegistradas
+            ? "Crea un paquete nuevo idéntico para el mismo paciente."
+            : "Solo disponible cuando se completen todas las sesiones del paquete actual."}
         </p>
         {renovState.error && (
           <p className="mt-1 text-sm text-red-700">{renovState.error}</p>

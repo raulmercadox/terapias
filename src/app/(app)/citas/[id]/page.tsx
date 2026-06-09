@@ -54,6 +54,10 @@ export default async function DetalleCitaPage({
       terapeuta: {
         select: { nombres: true, apellidos: true, especialidad: true },
       },
+      observaciones: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, texto: true, autor: true, createdAt: true },
+      },
     },
   });
 
@@ -208,7 +212,12 @@ export default async function DetalleCitaPage({
         <SeguimientoForm
           citaId={cita.id}
           terapiaRealizada={cita.terapiaRealizada}
-          observacion={cita.observacion}
+          observaciones={cita.observaciones.map((o) => ({
+            id: o.id,
+            texto: o.texto,
+            autor: o.autor,
+            createdAt: o.createdAt.toISOString(),
+          }))}
         />
       </Card>
     </div>

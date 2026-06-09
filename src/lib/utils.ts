@@ -28,6 +28,23 @@ export function fecha(value: Date | string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "—" : DATE_FMT.format(d);
 }
 
+const DATETIME_FMT = new Intl.DateTimeFormat("es-PE", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true,
+  timeZone: "America/Lima",
+});
+
+/** Fecha y hora (zona horaria de Perú), ej. "07/06/2026, 12:45 p. m.". */
+export function fechaHora(value: Date | string | null | undefined): string {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  return Number.isNaN(d.getTime()) ? "—" : DATETIME_FMT.format(d);
+}
+
 /** Edad en años a partir de la fecha de nacimiento. */
 export function edad(fechaNac: Date | string | null | undefined): string {
   if (!fechaNac) return "—";

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser, canAccessSede } from "@/lib/session";
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
+import { normalizarTelefonoPe } from "../../../citas/helpers";
 import { PrintActions } from "./print-button";
 
 const METODO_LABEL: Record<string, string> = {
@@ -57,6 +58,11 @@ export default async function ReciboPage({
           apellidoPaterno: true,
           apellidoMaterno: true,
           dni: true,
+          telefono: true,
+          apoderados: {
+            orderBy: { principal: "desc" },
+            select: { nombres: true, telefono: true, principal: true },
+          },
         },
       },
     },
@@ -64,9 +70,27 @@ export default async function ReciboPage({
 
   if (!pago || !canAccessSede(user, pago.sedeId)) notFound();
 
+  // Teléfono: apoderado principal > primer apoderado con teléfono > paciente.
+  const apoderado =
+    pago.paciente.apoderados.find((a) => a.principal && a.telefono) ??
+    pago.paciente.apoderados.find((a) => a.telefono);
+  const telefono = normalizarTelefonoPe(
+    apoderado?.telefono ?? pago.paciente.telefono,
+  );
+
+  const conceptoLabel = CONCEPTO_LABEL[pago.concepto] ?? pago.concepto;
+  const mensajeWhatsApp =
+    `*Centro B-Genius* — Recibo ${pago.numeroRecibo}\n` +
+    `Paciente: ${nombreCompleto(pago.paciente)}\n` +
+    `Concepto: ${conceptoLabel}\n` +
+    `Fecha: ${fecha(pago.fechaPago)}\n` +
+    `Monto pagado: ${soles(pago.monto)}\n` +
+    (Number(pago.saldo) > 0 ? `Saldo pendiente: ${soles(pago.saldo)}\n` : "") +
+    `\nDocumento interno sin valor tributario. ¡Gracias por su pago!`;
+
   return (
     <div className="space-y-4">
-      <PrintActions />
+      <PrintActions telefono={telefono} mensaje={mensajeWhatsApp} />
 
       <div className="print-area mx-auto max-w-2xl rounded-xl border border-slate-300 bg-white p-8 text-slate-900 shadow-sm">
         {/* Encabezado */}

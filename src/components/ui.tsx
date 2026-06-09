@@ -130,7 +130,16 @@ export function Input({
   className,
   ...props
 }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(controlBase, className)} {...props} />;
+  // suppressHydrationWarning: los gestores de contraseñas (Keeper, LastPass, etc.)
+  // inyectan atributos/elementos en los inputs antes de la hidratación, lo que
+  // dispara una advertencia de mismatch inofensiva. Esto la silencia.
+  return (
+    <input
+      className={cn(controlBase, className)}
+      suppressHydrationWarning
+      {...props}
+    />
+  );
 }
 
 export function Textarea({

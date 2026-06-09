@@ -16,7 +16,7 @@ export default async function NuevoPagoPage() {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
 
-  const [pacientesRaw, paquetesRaw] = await Promise.all([
+  const [pacientesRaw, paquetesRaw, pagosPorPaquete] = await Promise.all([
     prisma.paciente.findMany({
       where: { sedeId, estado: "ACTIVO" },
       orderBy: [{ apellidoPaterno: "asc" }, { nombres: "asc" }],
@@ -38,7 +38,17 @@ export default async function NuevoPagoPage() {
         fechaInicio: true,
       },
     }),
+    // Total ya pagado por cada paquete de la sede (para calcular el saldo).
+    prisma.pago.groupBy({
+      by: ["paqueteId"],
+      where: { sedeId, paqueteId: { not: null } },
+      _sum: { monto: true },
+    }),
   ]);
+
+  const pagadoPorPaquete = new Map(
+    pagosPorPaquete.map((g) => [g.paqueteId, Number(g._sum.monto ?? 0)]),
+  );
 
   const pacientes = pacientesRaw.map((p) => ({
     id: p.id,
@@ -48,6 +58,8 @@ export default async function NuevoPagoPage() {
   const paquetes = paquetesRaw.map((p) => ({
     id: p.id,
     pacienteId: p.pacienteId,
+    precio: Number(p.precio),
+    pagado: pagadoPorPaquete.get(p.id) ?? 0,
     etiqueta: `${p.totalSesiones} sesiones · ${soles(p.precio)}${
       p.fechaInicio ? ` · ${fecha(p.fechaInicio)}` : ""
     }`,

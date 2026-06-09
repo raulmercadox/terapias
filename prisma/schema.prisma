@@ -250,11 +250,26 @@ model Cita {
   paciente  Paciente   @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
   terapeuta Terapeuta? @relation(fields: [terapeutaId], references: [id])
   paquete   Paquete?   @relation(fields: [paqueteId], references: [id], onDelete: SetNull)
+  observaciones ObservacionSesion[]
 
   @@index([sedeId, fecha])
   @@index([pacienteId])
   @@index([terapeutaId, fecha])
   @@index([paqueteId])
+}
+
+// Historial inmutable de observaciones del seguimiento de la sesión.
+// Cada registro es una nota fechada que no se edita ni se borra: queda como bitácora.
+model ObservacionSesion {
+  id        String   @id @default(cuid())
+  citaId    String
+  texto     String
+  autor     String? // nombre del usuario que registró la observación
+  createdAt DateTime @default(now())
+
+  cita Cita @relation(fields: [citaId], references: [id], onDelete: Cascade)
+
+  @@index([citaId, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────

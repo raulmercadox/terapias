@@ -16,8 +16,15 @@ type PacienteOpt = { id: string; nombre: string };
 type PaqueteOpt = {
   id: string;
   pacienteId: string;
+  precio: number;
+  pagado: number;
   etiqueta: string;
 };
+
+/** Redondea a 2 decimales evitando errores de coma flotante. */
+function aDosDecimales(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 
 const CONCEPTOS: { value: string; label: string }[] = [
   { value: "PAQUETE_SESIONES", label: "Paquete de sesiones" },
@@ -49,11 +56,29 @@ export function PagoForm({
 }) {
   const [state, formAction, pending] = useActionState(registrarPago, initialState);
   const [pacienteId, setPacienteId] = useState("");
+  const [paqueteId, setPaqueteId] = useState("");
+  const [monto, setMonto] = useState("");
 
   const paquetesPaciente = useMemo(
     () => paquetes.filter((p) => p.pacienteId === pacienteId),
     [paquetes, pacienteId],
   );
+
+  const paqueteSel = useMemo(
+    () => paquetes.find((p) => p.id === paqueteId),
+    [paquetes, paqueteId],
+  );
+
+  // Saldo automático: solo aplica si hay paquete vinculado (tiene precio total).
+  // saldo = precio − (pagos previos + este monto), nunca menor a 0.
+  const montoNum = Number(monto) || 0;
+  const pendienteActual = paqueteSel
+    ? aDosDecimales(paqueteSel.precio - paqueteSel.pagado)
+    : null;
+  const saldoCalculado =
+    paqueteSel != null
+      ? aDosDecimales(Math.max(0, paqueteSel.precio - paqueteSel.pagado - montoNum))
+      : 0;
 
   return (
     <form action={formAction} className="space-y-5">
@@ -69,7 +94,10 @@ export function PagoForm({
             name="pacienteId"
             required
             value={pacienteId}
-            onChange={(e) => setPacienteId(e.target.value)}
+            onChange={(e) => {
+              setPacienteId(e.target.value);
+              setPaqueteId(""); // los paquetes dependen del paciente
+            }}
           >
             <option value="">— Selecciona —</option>
             {pacientes.map((p) => (
@@ -81,7 +109,12 @@ export function PagoForm({
         </Field>
 
         <Field label="Paquete vinculado (opcional)">
-          <Select name="paqueteId" disabled={paquetesPaciente.length === 0}>
+          <Select
+            name="paqueteId"
+            value={paqueteId}
+            onChange={(e) => setPaqueteId(e.target.value)}
+            disabled={paquetesPaciente.length === 0}
+          >
             <option value="">— Sin vincular —</option>
             {paquetesPaciente.map((p) => (
               <option key={p.id} value={p.id}>
@@ -125,19 +158,25 @@ export function PagoForm({
               step="0.01"
               min="0.01"
               inputMode="decimal"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value)}
               required
             />
           </Field>
 
           <Field label="Saldo (S/)">
             <Input
-              name="saldo"
               type="number"
-              step="0.01"
-              min="0"
-              inputMode="decimal"
-              defaultValue="0"
+              value={paqueteSel ? saldoCalculado : 0}
+              readOnly
+              tabIndex={-1}
+              className="bg-slate-100 text-slate-600"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              {paqueteSel
+                ? `Pendiente del paquete: S/ ${pendienteActual?.toFixed(2)}`
+                : "Se calcula automáticamente al vincular un paquete."}
+            </p>
           </Field>
 
           <Field label="Fecha de pago" required>
