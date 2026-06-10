@@ -111,14 +111,6 @@ export function PacienteForm({
             </Select>
             <Err errors={fe} name="sexo" />
           </Field>
-          <Field label="Programa" required>
-            <Select name="programa" defaultValue={v.programa ?? "TERAPIAS"}>
-              <option value="ESCOLAR">Escolar</option>
-              <option value="INTERDIARIO">Terapias Grupales</option>
-              <option value="TERAPIAS">Terapia Individual</option>
-            </Select>
-            <Err errors={fe} name="programa" />
-          </Field>
         </div>
       </Card>
 

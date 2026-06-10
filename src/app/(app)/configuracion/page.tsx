@@ -26,6 +26,24 @@ export default async function ConfiguracionPage() {
       href: "/configuracion/terapeutas",
       icon: "🧑‍⚕️",
     },
+    {
+      label: "Programas",
+      descripcion: "Programas de terapia y la duración de sus sesiones.",
+      href: "/configuracion/programas",
+      icon: "🧩",
+    },
+    {
+      label: "Horario de atención",
+      descripcion: "Días y horas de atención de cada sede.",
+      href: "/configuracion/horario",
+      icon: "🕒",
+    },
+    {
+      label: "Feriados",
+      descripcion: "Días no disponibles para sesiones.",
+      href: "/configuracion/feriados",
+      icon: "📅",
+    },
   ];
 
   return (

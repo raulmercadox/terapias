@@ -1,27 +1,10 @@
 // Lógica de programación de fechas para las sesiones de un paquete.
 // No es un Server Action: solo utilidades puras reutilizables por las actions.
 
-/**
- * Devuelve los días de la semana (0=Dom .. 6=Sáb) en los que caen las sesiones
- * según la frecuencia semanal. Se reparten en días hábiles (Lun..Vie):
- *   1 -> [Lun]
- *   2 -> [Mar, Jue]
- *   3 -> [Lun, Mié, Vie]
- *   4 -> [Lun, Mar, Jue, Vie]
- *   5 -> [Lun, Mar, Mié, Jue, Vie]
- * Para frecuencias >5 se reparte en Lun..Vie de forma cíclica (días repetidos).
- */
-function diasDeLaSemana(frecuencia: number): number[] {
-  const f = Math.max(1, Math.min(5, frecuencia));
-  const mapa: Record<number, number[]> = {
-    1: [1], // Lun
-    2: [2, 4], // Mar, Jue
-    3: [1, 3, 5], // Lun, Mié, Vie
-    4: [1, 2, 4, 5], // Lun, Mar, Jue, Vie
-    5: [1, 2, 3, 4, 5], // Lun..Vie
-  };
-  return mapa[f];
-}
+import { sumarMinutos, claveFecha } from "./horario";
+
+/** Una entrada del horario semanal: día (getDay 0=Dom..6=Sáb) y hora de inicio. */
+export type HorarioDia = { dia: number; horaInicio: string };
 
 /** Fecha (sin hora) a medianoche local. */
 function aMedianoche(d: Date): Date {
@@ -30,40 +13,60 @@ function aMedianoche(d: Date): Date {
   return x;
 }
 
+export type SesionGenerada = {
+  fecha: Date;
+  horaInicio: string;
+  horaFin: string;
+};
+
 /**
- * Genera las fechas de las N sesiones a partir de `fechaInicio` repartidas
- * según `frecuenciaSemana` en días hábiles. La primera sesión cae en el primer
- * día válido (de la frecuencia) que sea >= fechaInicio.
+ * Genera las fechas/horas de las N sesiones a partir de `fechaInicio`,
+ * repartidas según el `horario` semanal (cada día con su hora), saltando los
+ * feriados. La hora de fin se calcula con `duracionMin`. Los feriados NO
+ * consumen sesión: se saltan y se sigue buscando el siguiente día válido.
  *
- * @returns array de Date (longitud = totalSesiones), ordenado cronológicamente.
+ * @returns array ordenado cronológicamente (longitud = totalSesiones, salvo
+ *          que no haya días válidos o se agote el tope de seguridad).
  */
-export function generarFechasSesiones(
-  fechaInicio: Date,
-  totalSesiones: number,
-  frecuenciaSemana: number,
-): Date[] {
-  const dias = diasDeLaSemana(frecuenciaSemana);
-  const fechas: Date[] = [];
+export function generarSesiones(opts: {
+  totalSesiones: number;
+  horario: HorarioDia[];
+  duracionMin: number;
+  fechaInicio: Date;
+  feriados?: Set<string>;
+}): SesionGenerada[] {
+  const { totalSesiones, horario, duracionMin, fechaInicio, feriados } = opts;
 
-  // Avanzamos día a día desde fechaInicio; tomamos los que coincidan con `dias`.
+  // Mapa día → hora de inicio.
+  const porDia = new Map<number, string>();
+  for (const h of horario) porDia.set(h.dia, h.horaInicio);
+
+  const out: SesionGenerada[] = [];
+  if (porDia.size === 0 || totalSesiones < 1) return out;
+
   const cursor = aMedianoche(fechaInicio);
-  let guard = 0; // tope de seguridad por si frecuencia fuera 0 (no debería)
-  const maxIteraciones = totalSesiones * 14 + 30;
+  let guard = 0;
+  const maxIteraciones = totalSesiones * 14 + 60;
 
-  while (fechas.length < totalSesiones && guard < maxIteraciones) {
-    if (dias.includes(cursor.getDay())) {
-      fechas.push(new Date(cursor));
+  while (out.length < totalSesiones && guard < maxIteraciones) {
+    const hora = porDia.get(cursor.getDay());
+    if (hora && !feriados?.has(claveFecha(cursor))) {
+      out.push({
+        fecha: new Date(cursor),
+        horaInicio: hora,
+        horaFin: sumarMinutos(hora, duracionMin),
+      });
     }
     cursor.setDate(cursor.getDate() + 1);
     guard += 1;
   }
 
-  return fechas;
+  return out;
 }
 
 /**
  * Construye el payload de las Citas (sesiones) de un paquete, listo para
- * `prisma.cita.createMany`. Numera 1..N y asigna fechas según frecuencia.
+ * `prisma.cita.createMany`. Numera 1..N.
  */
 export function construirSesiones(opts: {
   sedeId: string;
@@ -71,54 +74,24 @@ export function construirSesiones(opts: {
   paqueteId: string;
   terapeutaId: string | null;
   totalSesiones: number;
-  frecuenciaSemana: number;
+  horario: HorarioDia[];
+  duracionMin: number;
   fechaInicio: Date;
-  horaInicio?: string;
-  horaFin?: string;
+  feriados?: Set<string>;
 }) {
-  const {
-    sedeId,
-    pacienteId,
-    paqueteId,
-    terapeutaId,
-    totalSesiones,
-    frecuenciaSemana,
-    fechaInicio,
-    horaInicio = "09:00",
-    horaFin = "09:45",
-  } = opts;
+  const sesiones = generarSesiones(opts);
 
-  const fechas = generarFechasSesiones(
-    fechaInicio,
-    totalSesiones,
-    frecuenciaSemana,
-  );
-
-  return fechas.map((fecha, i) => ({
-    sedeId,
-    pacienteId,
-    terapeutaId,
-    paqueteId,
+  return sesiones.map((s, i) => ({
+    sedeId: opts.sedeId,
+    pacienteId: opts.pacienteId,
+    terapeutaId: opts.terapeutaId,
+    paqueteId: opts.paqueteId,
     numeroSesion: i + 1,
-    fecha,
-    horaInicio,
-    horaFin,
+    fecha: s.fecha,
+    horaInicio: s.horaInicio,
+    horaFin: s.horaFin,
     tipo: "SESION" as const,
     estado: "AGENDADA" as const,
     asistencia: "PENDIENTE" as const,
   }));
-}
-
-/** Última fecha de la programación (para `fechaFin` del paquete). */
-export function fechaFinDeSesiones(
-  fechaInicio: Date,
-  totalSesiones: number,
-  frecuenciaSemana: number,
-): Date | null {
-  const fechas = generarFechasSesiones(
-    fechaInicio,
-    totalSesiones,
-    frecuenciaSemana,
-  );
-  return fechas.length ? fechas[fechas.length - 1] : null;
 }

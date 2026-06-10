@@ -95,6 +95,10 @@ model Sede {
   direccion String?
   telefono  String?
   activo    Boolean  @default(true)
+  // Horario laboral (atención): rango de atención y días hábiles.
+  horaApertura  String @default("09:00") // "HH:mm"
+  horaCierre    String @default("13:00") // "HH:mm"
+  diasLaborales Int[]  @default([1, 2, 3, 4, 5, 6]) // getDay(): 0=Dom..6=Sáb
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -104,6 +108,8 @@ model Sede {
   paquetes   Paquete[]
   citas      Cita[]
   pagos      Pago[]
+  programas  ProgramaTerapia[]
+  feriados   Feriado[]
 }
 
 model User {
@@ -208,8 +214,11 @@ model Paquete {
   id               String        @id @default(cuid())
   sedeId           String
   pacienteId       String
+  programaId       String?
   totalSesiones    Int           @default(12)
   frecuenciaSemana Int           @default(3)
+  // Plantilla del horario semanal: [{ "dia": 1, "hora": "09:00" }, ...] (para renovar).
+  horarioSemanal   Json?
   precio           Decimal       @db.Decimal(10, 2)
   fechaInicio      DateTime?
   fechaFin         DateTime?
@@ -218,13 +227,15 @@ model Paquete {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  sede     Sede     @relation(fields: [sedeId], references: [id])
-  paciente Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  sede     Sede             @relation(fields: [sedeId], references: [id])
+  paciente Paciente         @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  programa ProgramaTerapia? @relation(fields: [programaId], references: [id])
   citas    Cita[]
   pagos    Pago[]
 
   @@index([sedeId])
   @@index([pacienteId])
+  @@index([programaId])
 }
 
 model Cita {
@@ -270,6 +281,42 @@ model ObservacionSesion {
   cita Cita @relation(fields: [citaId], references: [id], onDelete: Cascade)
 
   @@index([citaId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Configuración de agenda por sede: programas y feriados
+// ─────────────────────────────────────────────────────────────
+
+// Programa de terapia configurable por sede. Define la duración de sus sesiones.
+// (Independiente del enum Programa usado en Paciente.)
+model ProgramaTerapia {
+  id          String   @id @default(cuid())
+  sedeId      String
+  nombre      String
+  duracionMin Int      @default(45)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sede     Sede      @relation(fields: [sedeId], references: [id])
+  paquetes Paquete[]
+
+  @@unique([sedeId, nombre])
+  @@index([sedeId])
+}
+
+// Feriados por sede: días no disponibles para sesiones (se saltan al generar).
+model Feriado {
+  id          String   @id @default(cuid())
+  sedeId      String
+  fecha       DateTime // anclado a medianoche local
+  descripcion String?
+  createdAt   DateTime @default(now())
+
+  sede Sede @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+
+  @@unique([sedeId, fecha])
+  @@index([sedeId, fecha])
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -287,3 +287,182 @@ export async function guardarTerapeuta(
   revalidatePath("/configuracion/terapeutas");
   redirect("/configuracion/terapeutas");
 }
+
+/* ════════════════════════════════════════════════════════
+ * PROGRAMAS (configurables por sede, con duración de sesión)
+ * ════════════════════════════════════════════════════════ */
+
+const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const programaSchema = z.object({
+  sedeId: z.string().min(1, "La sede es obligatoria."),
+  nombre: z.string().trim().min(1, "El nombre es obligatorio."),
+  duracionMin: z.coerce
+    .number()
+    .int("La duración debe ser un número entero.")
+    .min(5, "Mínimo 5 minutos.")
+    .max(480, "Máximo 480 minutos."),
+  activo: z.boolean(),
+});
+
+export async function guardarPrograma(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const id = String(formData.get("id") ?? "");
+  const parsed = programaSchema.safeParse({
+    sedeId: String(formData.get("sedeId") ?? ""),
+    nombre: String(formData.get("nombre") ?? ""),
+    duracionMin: String(formData.get("duracionMin") ?? ""),
+    activo: formData.get("activo") === "on",
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const { sedeId, nombre, duracionMin, activo } = parsed.data;
+
+  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  if (!sede) return { error: "La sede seleccionada no existe." };
+
+  // Nombre único por sede (excluyendo el propio al editar).
+  const existente = await prisma.programaTerapia.findFirst({
+    where: { sedeId, nombre },
+    select: { id: true },
+  });
+  if (existente && existente.id !== id) {
+    return { error: "Ya existe un programa con ese nombre en la sede." };
+  }
+
+  if (id) {
+    await prisma.programaTerapia.update({
+      where: { id },
+      data: { sedeId, nombre, duracionMin, activo },
+    });
+  } else {
+    await prisma.programaTerapia.create({
+      data: { sedeId, nombre, duracionMin, activo },
+    });
+  }
+
+  revalidatePath("/configuracion/programas");
+  redirect("/configuracion/programas");
+}
+
+/* ════════════════════════════════════════════════════════
+ * HORARIO LABORAL (por sede)
+ * ════════════════════════════════════════════════════════ */
+
+const horarioSchema = z
+  .object({
+    sedeId: z.string().min(1, "La sede es obligatoria."),
+    horaApertura: z.string().regex(HORA_RE, "Hora de apertura inválida."),
+    horaCierre: z.string().regex(HORA_RE, "Hora de cierre inválida."),
+    diasLaborales: z
+      .array(z.coerce.number().int().min(0).max(6))
+      .min(1, "Seleccione al menos un día laboral."),
+  })
+  .refine((d) => d.horaCierre > d.horaApertura, {
+    message: "El cierre debe ser posterior a la apertura.",
+    path: ["horaCierre"],
+  });
+
+export async function guardarHorarioLaboral(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const parsed = horarioSchema.safeParse({
+    sedeId: String(formData.get("sedeId") ?? ""),
+    horaApertura: String(formData.get("horaApertura") ?? ""),
+    horaCierre: String(formData.get("horaCierre") ?? ""),
+    diasLaborales: formData.getAll("diasLaborales").map((d) => Number(d)),
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const { sedeId, horaApertura, horaCierre, diasLaborales } = parsed.data;
+
+  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  if (!sede) return { error: "La sede seleccionada no existe." };
+
+  // Orden ascendente y sin duplicados.
+  const dias = Array.from(new Set(diasLaborales)).sort((a, b) => a - b);
+
+  await prisma.sede.update({
+    where: { id: sedeId },
+    data: { horaApertura, horaCierre, diasLaborales: dias },
+  });
+
+  revalidatePath("/configuracion/horario");
+  redirect(`/configuracion/horario?sede=${sedeId}&ok=1`);
+}
+
+/* ════════════════════════════════════════════════════════
+ * FERIADOS (por sede)
+ * ════════════════════════════════════════════════════════ */
+
+const feriadoSchema = z.object({
+  sedeId: z.string().min(1, "La sede es obligatoria."),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indique una fecha válida."),
+  descripcion: z.string().trim().optional().nullable(),
+});
+
+/** "YYYY-MM-DD" → Date a medianoche local. */
+function fechaMedianoche(value: string): Date {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0);
+}
+
+export async function crearFeriado(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const parsed = feriadoSchema.safeParse({
+    sedeId: String(formData.get("sedeId") ?? ""),
+    fecha: String(formData.get("fecha") ?? ""),
+    descripcion: String(formData.get("descripcion") ?? "") || null,
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const { sedeId, fecha, descripcion } = parsed.data;
+
+  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  if (!sede) return { error: "La sede seleccionada no existe." };
+
+  const existente = await prisma.feriado.findUnique({
+    where: { sedeId_fecha: { sedeId, fecha: fechaMedianoche(fecha) } },
+    select: { id: true },
+  });
+  if (existente) return { error: "Ya hay un feriado registrado en esa fecha." };
+
+  await prisma.feriado.create({
+    data: { sedeId, fecha: fechaMedianoche(fecha), descripcion },
+  });
+
+  revalidatePath("/configuracion/feriados");
+  redirect(`/configuracion/feriados?sede=${sedeId}`);
+}
+
+export async function eliminarFeriado(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "Feriado no encontrado." };
+
+  const feriado = await prisma.feriado.findUnique({
+    where: { id },
+    select: { sedeId: true },
+  });
+  if (!feriado) return { error: "Feriado no encontrado." };
+
+  await prisma.feriado.delete({ where: { id } });
+
+  revalidatePath("/configuracion/feriados");
+  redirect(`/configuracion/feriados?sede=${feriado.sedeId}`);
+}

@@ -2,13 +2,17 @@ import { requireUser, requireActiveSede } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, ButtonLink, Card, EmptyState } from "@/components/ui";
 import { nombreCompleto } from "@/lib/utils";
+import { claveFecha } from "../horario";
 import NuevoPaqueteForm from "./form";
 
 export default async function NuevoPaquetePage() {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
 
-  const [pacientes, terapeutas] = await Promise.all([
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  const [pacientes, terapeutas, programas, sede, feriados] = await Promise.all([
     prisma.paciente.findMany({
       where: { sedeId, estado: "ACTIVO" },
       orderBy: [{ apellidoPaterno: "asc" }, { nombres: "asc" }],
@@ -24,13 +28,27 @@ export default async function NuevoPaquetePage() {
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
       select: { id: true, nombres: true, apellidos: true },
     }),
+    prisma.programaTerapia.findMany({
+      where: { sedeId, activo: true },
+      orderBy: { nombre: "asc" },
+      select: { id: true, nombre: true, duracionMin: true },
+    }),
+    prisma.sede.findUnique({
+      where: { id: sedeId },
+      select: { horaApertura: true, horaCierre: true, diasLaborales: true },
+    }),
+    prisma.feriado.findMany({
+      where: { sedeId, fecha: { gte: hoy } },
+      orderBy: { fecha: "asc" },
+      select: { fecha: true },
+    }),
   ]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Nuevo paquete"
-        subtitle="Se generarán automáticamente las sesiones según la frecuencia."
+        subtitle="Elige el programa y el horario de cada día; las sesiones se generan automáticamente."
         actions={
           <ButtonLink href="/sesiones" variant="secondary">
             Volver
@@ -40,6 +58,8 @@ export default async function NuevoPaquetePage() {
 
       {pacientes.length === 0 ? (
         <EmptyState message="No hay pacientes activos en esta sede. Registre un paciente antes de crear un paquete." />
+      ) : programas.length === 0 ? (
+        <EmptyState message="No hay programas configurados en esta sede. Cree un programa (con su duración) en Configuración › Programas antes de crear un paquete." />
       ) : (
         <Card className="max-w-2xl">
           <NuevoPaqueteForm
@@ -52,6 +72,11 @@ export default async function NuevoPaquetePage() {
               id: t.id,
               nombre: `${t.apellidos}, ${t.nombres}`,
             }))}
+            programas={programas}
+            horaApertura={sede?.horaApertura ?? "09:00"}
+            horaCierre={sede?.horaCierre ?? "13:00"}
+            diasLaborales={sede?.diasLaborales ?? [1, 2, 3, 4, 5, 6]}
+            feriados={feriados.map((f) => claveFecha(f.fecha))}
           />
         </Card>
       )}

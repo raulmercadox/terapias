@@ -5,10 +5,76 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser, assertSedeAccess, requireActiveSede } from "@/lib/session";
+import { conflictoTerapeuta } from "@/lib/conflictos";
+import { DIA_NOMBRE } from "../sesiones/horario";
+import { fecha as fmtFecha } from "@/lib/utils";
 
 /* ── Validación ───────────────────────────────────────── */
 
 const horaRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Medianoche local de una fecha (para comparar feriados por día). */
+function medianoche(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/**
+ * Valida que la franja de una cita respete el horario laboral de la sede, que
+ * la fecha no sea feriado y que el terapeuta no quede doble-reservado.
+ * Devuelve un mensaje de error, o null si la franja es válida.
+ */
+async function validarFranjaCita(params: {
+  sedeId: string;
+  fecha: Date;
+  horaInicio: string;
+  horaFin: string;
+  terapeutaId: string | null;
+  exceptCitaId?: string;
+}): Promise<string | null> {
+  const { sedeId, fecha, horaInicio, horaFin, terapeutaId, exceptCitaId } =
+    params;
+
+  const sede = await prisma.sede.findUnique({
+    where: { id: sedeId },
+    select: { horaApertura: true, horaCierre: true, diasLaborales: true },
+  });
+  if (sede) {
+    const dia = fecha.getDay();
+    if (!sede.diasLaborales.includes(dia)) {
+      return `La sede no atiende los ${DIA_NOMBRE[dia]}.`;
+    }
+    if (horaInicio < sede.horaApertura || horaFin > sede.horaCierre) {
+      return `El horario de atención es de ${sede.horaApertura} a ${sede.horaCierre}.`;
+    }
+  }
+
+  const feriado = await prisma.feriado.findUnique({
+    where: { sedeId_fecha: { sedeId, fecha: medianoche(fecha) } },
+    select: { descripcion: true },
+  });
+  if (feriado) {
+    return `La fecha seleccionada es feriado${
+      feriado.descripcion ? ` (${feriado.descripcion})` : ""
+    }.`;
+  }
+
+  if (terapeutaId) {
+    const c = await conflictoTerapeuta(prisma, {
+      terapeutaId,
+      fecha,
+      horaInicio,
+      horaFin,
+      exceptCitaId,
+    });
+    if (c) {
+      return `El terapeuta ya tiene una cita el ${fmtFecha(c.fecha)} de ${c.horaInicio} a ${c.horaFin} (${c.pacienteNombre}).`;
+    }
+  }
+
+  return null;
+}
 
 const citaSchema = z
   .object({
@@ -76,6 +142,16 @@ export async function crearCita(
     terapeutaId = t.id;
   }
 
+  const fechaCita = fechaDesdeInput(data.fecha);
+  const err = await validarFranjaCita({
+    sedeId,
+    fecha: fechaCita,
+    horaInicio: data.horaInicio,
+    horaFin: data.horaFin,
+    terapeutaId,
+  });
+  if (err) return { error: err };
+
   await prisma.cita.create({
     data: {
       sedeId,
@@ -83,7 +159,7 @@ export async function crearCita(
       terapeutaId,
       paqueteId: null,
       numeroSesion: null,
-      fecha: fechaDesdeInput(data.fecha),
+      fecha: fechaCita,
       horaInicio: data.horaInicio,
       horaFin: data.horaFin,
       tipo: data.tipo,
@@ -142,12 +218,23 @@ export async function actualizarCita(
     terapeutaId = t.id;
   }
 
+  const fechaCita = fechaDesdeInput(data.fecha);
+  const err = await validarFranjaCita({
+    sedeId: cita.sedeId,
+    fecha: fechaCita,
+    horaInicio: data.horaInicio,
+    horaFin: data.horaFin,
+    terapeutaId,
+    exceptCitaId: id,
+  });
+  if (err) return { error: err };
+
   await prisma.cita.update({
     where: { id },
     data: {
       pacienteId: data.pacienteId,
       terapeutaId,
-      fecha: fechaDesdeInput(data.fecha),
+      fecha: fechaCita,
       horaInicio: data.horaInicio,
       horaFin: data.horaFin,
       tipo: data.tipo,
