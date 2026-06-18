@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser, assertSedeAccess, requireActiveSede } from "@/lib/session";
-import { conflictoTerapeuta } from "@/lib/conflictos";
+import { cupoTerapeuta, conflictoPaciente } from "@/lib/conflictos";
 import { DIA_NOMBRE } from "../sesiones/horario";
 import { fecha as fmtFecha } from "@/lib/utils";
 
@@ -31,10 +31,20 @@ async function validarFranjaCita(params: {
   horaInicio: string;
   horaFin: string;
   terapeutaId: string | null;
+  pacienteId: string;
+  maxPacientes: number;
   exceptCitaId?: string;
 }): Promise<string | null> {
-  const { sedeId, fecha, horaInicio, horaFin, terapeutaId, exceptCitaId } =
-    params;
+  const {
+    sedeId,
+    fecha,
+    horaInicio,
+    horaFin,
+    terapeutaId,
+    pacienteId,
+    maxPacientes,
+    exceptCitaId,
+  } = params;
 
   const sede = await prisma.sede.findUnique({
     where: { id: sedeId },
@@ -60,16 +70,34 @@ async function validarFranjaCita(params: {
     }.`;
   }
 
+  // El paciente no puede estar en dos sesiones a la vez.
+  const pc = await conflictoPaciente(prisma, {
+    pacienteId,
+    fecha,
+    horaInicio,
+    horaFin,
+    exceptCitaId,
+  });
+  if (pc) {
+    return `El paciente ya tiene una sesión el ${fmtFecha(pc.fecha)} de ${pc.horaInicio} a ${pc.horaFin}. No puede estar en dos sesiones a la vez.`;
+  }
+
   if (terapeutaId) {
-    const c = await conflictoTerapeuta(prisma, {
+    const cupo = await cupoTerapeuta(prisma, {
       terapeutaId,
       fecha,
       horaInicio,
       horaFin,
+      maxPacientes,
+      nuevoPacienteId: pacienteId,
       exceptCitaId,
     });
-    if (c) {
-      return `El terapeuta ya tiene una cita el ${fmtFecha(c.fecha)} de ${c.horaInicio} a ${c.horaFin} (${c.pacienteNombre}).`;
+    if (cupo.excede && cupo.ejemplo) {
+      const ej = cupo.ejemplo;
+      if (maxPacientes <= 1) {
+        return `El terapeuta ya tiene una cita el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin} (${ej.pacienteNombre}).`;
+      }
+      return `El terapeuta ya alcanzó el cupo máximo (${maxPacientes}) el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin}.`;
     }
   }
 
@@ -149,6 +177,9 @@ export async function crearCita(
     horaInicio: data.horaInicio,
     horaFin: data.horaFin,
     terapeutaId,
+    pacienteId: data.pacienteId,
+    // Las citas manuales no pertenecen a un programa: cupo individual (1).
+    maxPacientes: 1,
   });
   if (err) return { error: err };
 
@@ -183,7 +214,10 @@ export async function actualizarCita(
 
   const cita = await prisma.cita.findUnique({
     where: { id },
-    select: { sedeId: true },
+    select: {
+      sedeId: true,
+      paquete: { select: { programa: { select: { maxPacientes: true } } } },
+    },
   });
   if (!cita) return { error: "Cita no encontrada." };
   assertSedeAccess(user, cita.sedeId);
@@ -225,6 +259,8 @@ export async function actualizarCita(
     horaInicio: data.horaInicio,
     horaFin: data.horaFin,
     terapeutaId,
+    pacienteId: data.pacienteId,
+    maxPacientes: cita.paquete?.programa?.maxPacientes ?? 1,
     exceptCitaId: id,
   });
   if (err) return { error: err };

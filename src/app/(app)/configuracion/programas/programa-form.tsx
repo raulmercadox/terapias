@@ -11,6 +11,7 @@ type ProgramaInicial = {
   sedeId: string;
   nombre: string;
   duracionMin: number;
+  maxPacientes: number;
   activo: boolean;
 };
 
@@ -62,6 +63,22 @@ export function ProgramaForm({
           defaultValue={programa?.duracionMin ?? 45}
           required
         />
+      </Field>
+
+      <Field label="Cupo máximo de pacientes por franja" required>
+        <Input
+          type="number"
+          name="maxPacientes"
+          min={1}
+          max={50}
+          step={1}
+          defaultValue={programa?.maxPacientes ?? 1}
+          required
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          1 = terapia individual. Más de 1 = terapia grupal (el terapeuta puede
+          atender ese número de pacientes en la misma fecha y hora).
+        </p>
       </Field>
 
       <Field label="Estado">

@@ -62,6 +62,7 @@ export default async function ProgramasPage({
                   <Th>Nombre</Th>
                   <Th>Sede</Th>
                   <Th>Duración sesión</Th>
+                  <Th>Cupo máx.</Th>
                   <Th>Estado</Th>
                   <Th />
                 </tr>
@@ -72,6 +73,11 @@ export default async function ProgramasPage({
                     <Td className="font-medium text-slate-900">{p.nombre}</Td>
                     <Td>{p.sede.nombre}</Td>
                     <Td>{p.duracionMin} min</Td>
+                    <Td>
+                      {p.maxPacientes === 1
+                        ? "Individual"
+                        : `${p.maxPacientes} (grupal)`}
+                    </Td>
                     <Td>
                       {p.activo ? (
                         <Badge color="green">Activo</Badge>
@@ -109,6 +115,7 @@ export default async function ProgramasPage({
                       sedeId: programaEnEdicion.sedeId,
                       nombre: programaEnEdicion.nombre,
                       duracionMin: programaEnEdicion.duracionMin,
+                      maxPacientes: programaEnEdicion.maxPacientes,
                       activo: programaEnEdicion.activo,
                     }
                   : undefined

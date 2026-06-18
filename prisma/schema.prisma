@@ -294,6 +294,9 @@ model ProgramaTerapia {
   sedeId      String
   nombre      String
   duracionMin Int      @default(45)
+  // Cupo máximo de pacientes por franja (terapeuta + día + hora).
+  // 1 = terapia individual; >1 = terapia grupal.
+  maxPacientes Int     @default(1)
   activo      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

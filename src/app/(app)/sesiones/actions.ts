@@ -10,7 +10,12 @@ import {
   generarSesiones,
   type HorarioDia,
 } from "./schedule";
-import { conflictoTerapeuta } from "@/lib/conflictos";
+import {
+  cupoTerapeuta,
+  conflictoPaciente,
+  type CitaOcupada,
+  type FranjaCita,
+} from "@/lib/conflictos";
 import { esIntervaloValido, claveFecha, aMinutos, DIA_NOMBRE } from "./horario";
 import { fecha as fmtFecha } from "@/lib/utils";
 
@@ -55,14 +60,17 @@ function parseHorario(value: unknown): HorarioDia[] | null {
   return out;
 }
 
-/** Mensaje de conflicto de terapeuta legible. */
-function mensajeConflicto(c: {
-  fecha: Date;
-  horaInicio: string;
-  horaFin: string;
-  pacienteNombre: string;
-}): string {
-  return `El terapeuta ya tiene una sesión el ${fmtFecha(c.fecha)} de ${c.horaInicio} a ${c.horaFin} (${c.pacienteNombre}).`;
+/** Mensaje legible cuando el terapeuta no tiene cupo en una franja. */
+function mensajeCupo(max: number, ej: CitaOcupada): string {
+  if (max <= 1) {
+    return `El terapeuta ya tiene una sesión el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin} (${ej.pacienteNombre}).`;
+  }
+  return `El terapeuta ya alcanzó el cupo máximo (${max}) el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin}.`;
+}
+
+/** Mensaje legible cuando el paciente ya tiene una sesión en esa franja. */
+function mensajePaciente(c: FranjaCita): string {
+  return `El paciente ya tiene una sesión el ${fmtFecha(c.fecha)} de ${c.horaInicio} a ${c.horaFin}. No puede estar en dos sesiones a la vez.`;
 }
 
 /* ── crearPaquete ────────────────────────────────────────── */
@@ -70,7 +78,7 @@ function mensajeConflicto(c: {
 const crearPaqueteSchema = z.object({
   pacienteId: z.string().min(1, "Seleccione un paciente."),
   programaId: z.string().min(1, "Seleccione un programa."),
-  terapeutaId: z.string().optional(),
+  terapeutaId: z.string().min(1, "Seleccione un terapeuta."),
   totalSesiones: z.coerce
     .number()
     .int()
@@ -116,7 +124,7 @@ export async function crearPaquete(
   // El programa debe pertenecer a la sede y estar activo (define la duración).
   const programa = await prisma.programaTerapia.findFirst({
     where: { id: data.programaId, sedeId, activo: true },
-    select: { duracionMin: true },
+    select: { duracionMin: true, maxPacientes: true },
   });
   if (!programa) {
     return { ok: false, error: "Programa no encontrado o inactivo en la sede." };
@@ -152,15 +160,12 @@ export async function crearPaquete(
     }
   }
 
-  const terapeutaId =
-    data.terapeutaId && data.terapeutaId !== "" ? data.terapeutaId : null;
-  if (terapeutaId) {
-    const ter = await prisma.terapeuta.findFirst({
-      where: { id: terapeutaId, sedeId },
-      select: { id: true },
-    });
-    if (!ter) return { ok: false, error: "Terapeuta no encontrado en la sede." };
-  }
+  const terapeutaId = data.terapeutaId;
+  const ter = await prisma.terapeuta.findFirst({
+    where: { id: terapeutaId, sedeId },
+    select: { id: true },
+  });
+  if (!ter) return { ok: false, error: "Terapeuta no encontrado en la sede." };
 
   // Feriados de la sede (desde la fecha de inicio): se saltarán al generar.
   const feriadosRows = await prisma.feriado.findMany({
@@ -182,16 +187,27 @@ export async function crearPaquete(
   }
   const fechaFin = generadas[generadas.length - 1].fecha;
 
-  // Bloquear si el terapeuta ya está ocupado en alguna de las franjas.
-  if (terapeutaId) {
-    for (const s of generadas) {
-      const c = await conflictoTerapeuta(prisma, {
-        terapeutaId,
-        fecha: s.fecha,
-        horaInicio: s.horaInicio,
-        horaFin: s.horaFin,
-      });
-      if (c) return { ok: false, error: mensajeConflicto(c) };
+  // Bloquear si el paciente ya tiene otra sesión solapada o el terapeuta ya
+  // superó su cupo en alguna de las franjas.
+  for (const s of generadas) {
+    const pc = await conflictoPaciente(prisma, {
+      pacienteId: data.pacienteId,
+      fecha: s.fecha,
+      horaInicio: s.horaInicio,
+      horaFin: s.horaFin,
+    });
+    if (pc) return { ok: false, error: mensajePaciente(pc) };
+
+    const cupo = await cupoTerapeuta(prisma, {
+      terapeutaId,
+      fecha: s.fecha,
+      horaInicio: s.horaInicio,
+      horaFin: s.horaFin,
+      maxPacientes: programa.maxPacientes,
+      nuevoPacienteId: data.pacienteId,
+    });
+    if (cupo.excede && cupo.ejemplo) {
+      return { ok: false, error: mensajeCupo(programa.maxPacientes, cupo.ejemplo) };
     }
   }
 
@@ -305,13 +321,28 @@ export async function reprogramarSesion(
 
   const cita = await prisma.cita.findUnique({
     where: { id: citaId },
-    select: { sedeId: true, paqueteId: true },
+    select: {
+      sedeId: true,
+      paqueteId: true,
+      pacienteId: true,
+      paquete: { select: { programa: { select: { maxPacientes: true } } } },
+    },
   });
   if (!cita) return { ok: false, error: "Sesión no encontrada." };
   assertSedeAccess(user, cita.sedeId);
 
   const nuevaFecha = parseFecha(fecha);
   if (!nuevaFecha) return { ok: false, error: "Fecha inválida." };
+
+  // El paciente no puede quedar con dos sesiones solapadas.
+  const pc = await conflictoPaciente(prisma, {
+    pacienteId: cita.pacienteId,
+    fecha: nuevaFecha,
+    horaInicio,
+    horaFin,
+    exceptCitaId: citaId,
+  });
+  if (pc) return { ok: false, error: mensajePaciente(pc) };
 
   const ter = terapeutaId && terapeutaId !== "" ? terapeutaId : null;
   if (ter) {
@@ -321,15 +352,20 @@ export async function reprogramarSesion(
     });
     if (!existe) return { ok: false, error: "Terapeuta inválido." };
 
-    // Bloquear si el terapeuta ya tiene otra cita que se cruza en esa franja.
-    const c = await conflictoTerapeuta(prisma, {
+    // Cupo del programa (1 = individual; >1 = grupal). Sin paquete/programa: 1.
+    const maxPacientes = cita.paquete?.programa?.maxPacientes ?? 1;
+    const cupo = await cupoTerapeuta(prisma, {
       terapeutaId: ter,
       fecha: nuevaFecha,
       horaInicio,
       horaFin,
+      maxPacientes,
+      nuevoPacienteId: cita.pacienteId,
       exceptCitaId: citaId,
     });
-    if (c) return { ok: false, error: mensajeConflicto(c) };
+    if (cupo.excede && cupo.ejemplo) {
+      return { ok: false, error: mensajeCupo(maxPacientes, cupo.ejemplo) };
+    }
   }
 
   await prisma.cita.update({
@@ -537,6 +573,16 @@ export async function renovarPaquete(
   const duracionMin =
     Math.max(0, aMinutos(primera.horaFin) - aMinutos(primera.horaInicio)) || 45;
 
+  // Cupo del programa (1 = individual; >1 = grupal). Paquetes antiguos: 1.
+  let maxPacientes = 1;
+  if (origen.programaId) {
+    const prog = await prisma.programaTerapia.findUnique({
+      where: { id: origen.programaId },
+      select: { maxPacientes: true },
+    });
+    maxPacientes = prog?.maxPacientes ?? 1;
+  }
+
   // Terapeuta por defecto: el de la última sesión del paquete origen.
   const terapeutaId = citasOrigen[citasOrigen.length - 1].terapeutaId ?? null;
 
@@ -563,16 +609,29 @@ export async function renovarPaquete(
   }
   const fechaFin = generadas[generadas.length - 1].fecha;
 
-  // Bloquear si el terapeuta heredado ya está ocupado en alguna franja.
-  if (terapeutaId) {
-    for (const s of generadas) {
-      const c = await conflictoTerapeuta(prisma, {
+  // Bloquear si el paciente ya tiene otra sesión solapada o el terapeuta
+  // heredado ya superó su cupo en alguna franja.
+  for (const s of generadas) {
+    const pc = await conflictoPaciente(prisma, {
+      pacienteId: origen.pacienteId,
+      fecha: s.fecha,
+      horaInicio: s.horaInicio,
+      horaFin: s.horaFin,
+    });
+    if (pc) return { ok: false, error: mensajePaciente(pc) };
+
+    if (terapeutaId) {
+      const cupo = await cupoTerapeuta(prisma, {
         terapeutaId,
         fecha: s.fecha,
         horaInicio: s.horaInicio,
         horaFin: s.horaFin,
+        maxPacientes,
+        nuevoPacienteId: origen.pacienteId,
       });
-      if (c) return { ok: false, error: mensajeConflicto(c) };
+      if (cupo.excede && cupo.ejemplo) {
+        return { ok: false, error: mensajeCupo(maxPacientes, cupo.ejemplo) };
+      }
     }
   }
 

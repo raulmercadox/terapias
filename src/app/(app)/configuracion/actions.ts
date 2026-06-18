@@ -302,6 +302,11 @@ const programaSchema = z.object({
     .int("La duración debe ser un número entero.")
     .min(5, "Mínimo 5 minutos.")
     .max(480, "Máximo 480 minutos."),
+  maxPacientes: z.coerce
+    .number()
+    .int("El cupo debe ser un número entero.")
+    .min(1, "Mínimo 1 paciente.")
+    .max(50, "Máximo 50 pacientes."),
   activo: z.boolean(),
 });
 
@@ -316,11 +321,12 @@ export async function guardarPrograma(
     sedeId: String(formData.get("sedeId") ?? ""),
     nombre: String(formData.get("nombre") ?? ""),
     duracionMin: String(formData.get("duracionMin") ?? ""),
+    maxPacientes: String(formData.get("maxPacientes") ?? ""),
     activo: formData.get("activo") === "on",
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { sedeId, nombre, duracionMin, activo } = parsed.data;
+  const { sedeId, nombre, duracionMin, maxPacientes, activo } = parsed.data;
 
   const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
   if (!sede) return { error: "La sede seleccionada no existe." };
@@ -337,11 +343,11 @@ export async function guardarPrograma(
   if (id) {
     await prisma.programaTerapia.update({
       where: { id },
-      data: { sedeId, nombre, duracionMin, activo },
+      data: { sedeId, nombre, duracionMin, maxPacientes, activo },
     });
   } else {
     await prisma.programaTerapia.create({
-      data: { sedeId, nombre, duracionMin, activo },
+      data: { sedeId, nombre, duracionMin, maxPacientes, activo },
     });
   }
 

@@ -11,8 +11,12 @@ export default async function NuevoPaquetePage() {
 
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
+  // Horizonte para el calendario de disponibilidad (~17 semanas).
+  const horizonte = new Date(hoy);
+  horizonte.setDate(horizonte.getDate() + 120);
 
-  const [pacientes, terapeutas, programas, sede, feriados] = await Promise.all([
+  const [pacientes, terapeutas, programas, sede, feriados, citasFuturas] =
+    await Promise.all([
     prisma.paciente.findMany({
       where: { sedeId, estado: "ACTIVO" },
       orderBy: [{ apellidoPaterno: "asc" }, { nombres: "asc" }],
@@ -31,7 +35,7 @@ export default async function NuevoPaquetePage() {
     prisma.programaTerapia.findMany({
       where: { sedeId, activo: true },
       orderBy: { nombre: "asc" },
-      select: { id: true, nombre: true, duracionMin: true },
+      select: { id: true, nombre: true, duracionMin: true, maxPacientes: true },
     }),
     prisma.sede.findUnique({
       where: { id: sedeId },
@@ -41,6 +45,20 @@ export default async function NuevoPaquetePage() {
       where: { sedeId, fecha: { gte: hoy } },
       orderBy: { fecha: "asc" },
       select: { fecha: true },
+    }),
+    prisma.cita.findMany({
+      where: {
+        sedeId,
+        estado: { not: "CANCELADA" },
+        fecha: { gte: hoy, lt: horizonte },
+      },
+      select: {
+        terapeutaId: true,
+        pacienteId: true,
+        fecha: true,
+        horaInicio: true,
+        horaFin: true,
+      },
     }),
   ]);
 
@@ -60,6 +78,8 @@ export default async function NuevoPaquetePage() {
         <EmptyState message="No hay pacientes activos en esta sede. Registre un paciente antes de crear un paquete." />
       ) : programas.length === 0 ? (
         <EmptyState message="No hay programas configurados en esta sede. Cree un programa (con su duración) en Configuración › Programas antes de crear un paquete." />
+      ) : terapeutas.length === 0 ? (
+        <EmptyState message="No hay terapeutas activos en esta sede. Registre un terapeuta en Configuración › Terapeutas antes de crear un paquete." />
       ) : (
         <Card className="max-w-2xl">
           <NuevoPaqueteForm
@@ -77,6 +97,14 @@ export default async function NuevoPaquetePage() {
             horaCierre={sede?.horaCierre ?? "13:00"}
             diasLaborales={sede?.diasLaborales ?? [1, 2, 3, 4, 5, 6]}
             feriados={feriados.map((f) => claveFecha(f.fecha))}
+            citas={citasFuturas.map((c) => ({
+              terapeutaId: c.terapeutaId,
+              pacienteId: c.pacienteId,
+              dia: c.fecha.getDay(),
+              clave: claveFecha(c.fecha),
+              horaInicio: c.horaInicio,
+              horaFin: c.horaFin,
+            }))}
           />
         </Card>
       )}
