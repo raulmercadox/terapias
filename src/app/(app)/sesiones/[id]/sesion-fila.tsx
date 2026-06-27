@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { Td, Badge, Button, Field, Input, Select, Textarea } from "@/components/ui";
-import { fecha } from "@/lib/utils";
+import { fecha, fechaInput } from "@/lib/utils";
 import {
   registrarAsistencia,
   reprogramarSesion,
@@ -25,12 +25,6 @@ type CitaVM = {
   terapeutaId: string | null;
   terapeutaNombre: string | null;
 };
-
-function fechaISOInput(iso: string): string {
-  const d = new Date(iso);
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 10);
-}
 
 export default function SesionFila({
   cita,
@@ -171,7 +165,7 @@ export default function SesionFila({
                     type="date"
                     name="fecha"
                     required
-                    defaultValue={fechaISOInput(cita.fecha)}
+                    defaultValue={fechaInput(cita.fecha)}
                   />
                 </Field>
                 <Field label="Hora inicio" required>

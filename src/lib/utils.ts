@@ -16,16 +16,34 @@ export function soles(value: unknown): string {
   return PEN.format(Number.isFinite(n) ? n : 0);
 }
 
+// Los campos "solo fecha" (sin hora) se almacenan anclados a la medianoche de
+// la zona del servidor (en producción America/New_York, UTC-4/-5). El día UTC
+// de esa instancia coincide con la fecha pretendida, así que SIEMPRE formateamos
+// e interpretamos estos campos en UTC. Esto evita que, al renderizarse en el
+// navegador (Perú, UTC-5), la fecha retroceda un día. NO usar para timestamps
+// reales (createdAt, fecha+hora de pago): para eso está `fechaHora`.
 const DATE_FMT = new Intl.DateTimeFormat("es-PE", {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 export function fecha(value: Date | string | null | undefined): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   return Number.isNaN(d.getTime()) ? "—" : DATE_FMT.format(d);
+}
+
+/**
+ * Valor "YYYY-MM-DD" para un <input type="date"> a partir de un campo solo-fecha
+ * (Date o ISO). Se interpreta en UTC, coherente con `fecha`, para que el día
+ * mostrado/precargado no dependa de la zona horaria del navegador.
+ */
+export function fechaInput(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const d = typeof value === "string" ? new Date(value) : value;
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
 }
 
 const DATETIME_FMT = new Intl.DateTimeFormat("es-PE", {
