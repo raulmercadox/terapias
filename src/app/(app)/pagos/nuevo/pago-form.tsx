@@ -11,6 +11,7 @@ import {
   Button,
   ButtonLink,
 } from "@/components/ui";
+import { Combobox } from "@/components/combobox";
 
 type PacienteOpt = { id: string; nombre: string };
 type PaqueteOpt = {
@@ -90,22 +91,16 @@ export function PagoForm({
         )}
 
         <Field label="Paciente" required>
-          <Select
+          <Combobox
             name="pacienteId"
             required
+            options={pacientes}
             value={pacienteId}
-            onChange={(e) => {
-              setPacienteId(e.target.value);
+            onChange={(id) => {
+              setPacienteId(id);
               setPaqueteId(""); // los paquetes dependen del paciente
             }}
-          >
-            <option value="">— Selecciona —</option>
-            {pacientes.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nombre}
-              </option>
-            ))}
-          </Select>
+          />
         </Field>
 
         <Field label="Paquete vinculado (opcional)">

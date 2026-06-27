@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button, ButtonLink, Field, Input, Select, Textarea } from "@/components/ui";
+import { Combobox } from "@/components/combobox";
 import { crearCita, actualizarCita, type FormState } from "./actions";
 
 type Opcion = { id: string; nombre: string };
@@ -42,16 +43,13 @@ export function CitaForm({
       {editando && <input type="hidden" name="id" value={inicial!.id} />}
 
       <Field label="Paciente" required>
-        <Select name="pacienteId" defaultValue={inicial?.pacienteId ?? ""} required>
-          <option value="" disabled>
-            Seleccione un paciente…
-          </option>
-          {pacientes.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre}
-            </option>
-          ))}
-        </Select>
+        <Combobox
+          name="pacienteId"
+          required
+          options={pacientes}
+          defaultValue={inicial?.pacienteId ?? ""}
+          placeholder="Seleccione un paciente…"
+        />
       </Field>
 
       <Field label="Terapeuta">
