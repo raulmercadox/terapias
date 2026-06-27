@@ -16,7 +16,13 @@ import {
   type CitaOcupada,
   type FranjaCita,
 } from "@/lib/conflictos";
-import { esIntervaloValido, claveFecha, aMinutos, DIA_NOMBRE } from "./horario";
+import {
+  esIntervaloValido,
+  claveFecha,
+  aMinutos,
+  sumarMinutos,
+  DIA_NOMBRE,
+} from "./horario";
 import { fecha as fmtFecha } from "@/lib/utils";
 
 export type ActionState = { ok: boolean; error?: string };
@@ -36,11 +42,18 @@ function parseFecha(value: unknown): Date | null {
   return new Date(y, m - 1, d, 0, 0, 0, 0);
 }
 
+const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Una sesión concreta elegida en el calendario: fecha "YYYY-MM-DD" + hora. */
+type SesionInput = { fecha: string; hora: string };
+
 /**
- * Parsea el horario semanal serializado por el formulario: JSON con entradas
- * `{ dia: number, hora: "HH:mm" }`. Devuelve null si el formato es inválido.
+ * Parsea las sesiones serializadas por el formulario: JSON con entradas
+ * `{ fecha: "YYYY-MM-DD", hora: "HH:mm" }`. El usuario marca cada sesión en una
+ * fecha concreta (ya no es un patrón semanal que se repite). Devuelve null si el
+ * formato es inválido.
  */
-function parseHorario(value: unknown): HorarioDia[] | null {
+function parseSesiones(value: unknown): SesionInput[] | null {
   if (typeof value !== "string" || !value.trim()) return null;
   let arr: unknown;
   try {
@@ -49,15 +62,21 @@ function parseHorario(value: unknown): HorarioDia[] | null {
     return null;
   }
   if (!Array.isArray(arr)) return null;
-  const out: HorarioDia[] = [];
+  const out: SesionInput[] = [];
   for (const it of arr) {
-    const dia = Number((it as { dia?: unknown })?.dia);
-    const horaInicio = String((it as { hora?: unknown })?.hora ?? "");
-    if (!Number.isInteger(dia) || dia < 0 || dia > 6) return null;
-    if (!HORA_RE.test(horaInicio)) return null;
-    out.push({ dia, horaInicio });
+    const fecha = String((it as { fecha?: unknown })?.fecha ?? "");
+    const hora = String((it as { hora?: unknown })?.hora ?? "");
+    if (!FECHA_RE.test(fecha)) return null;
+    if (!HORA_RE.test(hora)) return null;
+    out.push({ fecha, hora });
   }
   return out;
+}
+
+/** "YYYY-MM-DD" → Date a medianoche local (convención del resto del sistema). */
+function fechaDeClave(clave: string): Date {
+  const [y, m, d] = clave.split("-").map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
 }
 
 /** Mensaje legible cuando el terapeuta no tiene cupo en una franja. */
@@ -85,8 +104,7 @@ const crearPaqueteSchema = z.object({
     .min(1, "Mínimo 1 sesión.")
     .max(60, "Máximo 60 sesiones."),
   precio: z.coerce.number().min(0, "Precio inválido."),
-  fechaInicio: z.string().min(1, "Indique la fecha de inicio."),
-  horario: z.string().min(1, "Indique los días y la hora de la sesión."),
+  sesiones: z.string().min(1, "Marque las sesiones en el calendario."),
   observacion: z.string().optional(),
 });
 
@@ -106,12 +124,26 @@ export async function crearPaquete(
   }
   const data = parsed.data;
 
-  const fechaInicio = parseFecha(data.fechaInicio);
-  if (!fechaInicio) return { ok: false, error: "Fecha de inicio inválida." };
+  const sesionesInput = parseSesiones(data.sesiones);
+  if (!sesionesInput || sesionesInput.length === 0) {
+    return { ok: false, error: "Marque las sesiones en el calendario." };
+  }
 
-  const horario = parseHorario(data.horario);
-  if (!horario || horario.length === 0) {
-    return { ok: false, error: "Seleccione al menos un día con su hora." };
+  // Una sola sesión por día (no se pueden marcar dos en la misma fecha).
+  const clavesVistas = new Set<string>();
+  for (const s of sesionesInput) {
+    if (clavesVistas.has(s.fecha)) {
+      return { ok: false, error: "Hay sesiones repetidas en el mismo día." };
+    }
+    clavesVistas.add(s.fecha);
+  }
+
+  // Debe marcarse exactamente la cantidad indicada en "Total de sesiones".
+  if (sesionesInput.length !== data.totalSesiones) {
+    return {
+      ok: false,
+      error: `Debe marcar exactamente ${data.totalSesiones} sesión(es) en el calendario; marcó ${sesionesInput.length}.`,
+    };
   }
 
   // El paciente debe pertenecer a la sede.
@@ -137,29 +169,6 @@ export async function crearPaquete(
   });
   if (!sede) return { ok: false, error: "Sede no encontrada." };
 
-  // Validar cada día/hora contra el horario laboral.
-  for (const h of horario) {
-    if (!sede.diasLaborales.includes(h.dia)) {
-      return {
-        ok: false,
-        error: `El día ${DIA_NOMBRE[h.dia]} no es laborable en esta sede.`,
-      };
-    }
-    if (
-      !esIntervaloValido(
-        sede.horaApertura,
-        sede.horaCierre,
-        programa.duracionMin,
-        h.horaInicio,
-      )
-    ) {
-      return {
-        ok: false,
-        error: `La hora ${h.horaInicio} (${DIA_NOMBRE[h.dia]}) no es un intervalo válido del horario de atención.`,
-      };
-    }
-  }
-
   const terapeutaId = data.terapeutaId;
   const ter = await prisma.terapeuta.findFirst({
     where: { id: terapeutaId, sedeId },
@@ -167,29 +176,62 @@ export async function crearPaquete(
   });
   if (!ter) return { ok: false, error: "Terapeuta no encontrado en la sede." };
 
-  // Feriados de la sede (desde la fecha de inicio): se saltarán al generar.
+  // Feriados de la sede (para rechazar sesiones en esos días).
   const feriadosRows = await prisma.feriado.findMany({
-    where: { sedeId, fecha: { gte: fechaInicio } },
+    where: { sedeId },
     select: { fecha: true },
   });
   const feriados = new Set(feriadosRows.map((f) => claveFecha(f.fecha)));
 
-  // Generar fechas/horas para validar conflictos y calcular fechaFin.
-  const generadas = generarSesiones({
-    totalSesiones: data.totalSesiones,
-    horario,
-    duracionMin: programa.duracionMin,
-    fechaInicio,
-    feriados,
-  });
-  if (generadas.length === 0) {
-    return { ok: false, error: "No se pudieron generar sesiones con esos días." };
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const hoyClave = claveFecha(hoy);
+
+  // Validar y armar cada sesión concreta.
+  type SesionFinal = { fecha: Date; horaInicio: string; horaFin: string };
+  const finales: SesionFinal[] = [];
+  for (const s of sesionesInput) {
+    if (s.fecha < hoyClave) {
+      return { ok: false, error: `No se puede agendar en una fecha pasada (${s.fecha}).` };
+    }
+    if (feriados.has(s.fecha)) {
+      return { ok: false, error: `El ${s.fecha} es feriado; elija otro día.` };
+    }
+    const fecha = fechaDeClave(s.fecha);
+    const dia = fecha.getDay();
+    if (!sede.diasLaborales.includes(dia)) {
+      return {
+        ok: false,
+        error: `El ${DIA_NOMBRE[dia]} ${s.fecha} no es laborable en esta sede.`,
+      };
+    }
+    if (
+      !esIntervaloValido(sede.horaApertura, sede.horaCierre, programa.duracionMin, s.hora)
+    ) {
+      return {
+        ok: false,
+        error: `La hora ${s.hora} (${s.fecha}) no es un intervalo válido del horario de atención.`,
+      };
+    }
+    finales.push({
+      fecha,
+      horaInicio: s.hora,
+      horaFin: sumarMinutos(s.hora, programa.duracionMin),
+    });
   }
-  const fechaFin = generadas[generadas.length - 1].fecha;
+
+  // Orden cronológico para numerar y calcular inicio/fin.
+  finales.sort((a, b) => {
+    const fa = claveFecha(a.fecha);
+    const fb = claveFecha(b.fecha);
+    return fa === fb ? a.horaInicio.localeCompare(b.horaInicio) : fa.localeCompare(fb);
+  });
+  const fechaInicio = finales[0].fecha;
+  const fechaFin = finales[finales.length - 1].fecha;
 
   // Bloquear si el paciente ya tiene otra sesión solapada o el terapeuta ya
   // superó su cupo en alguna de las franjas.
-  for (const s of generadas) {
+  for (const s of finales) {
     const pc = await conflictoPaciente(prisma, {
       pacienteId: data.pacienteId,
       fecha: s.fecha,
@@ -211,6 +253,14 @@ export async function crearPaquete(
     }
   }
 
+  // Plantilla semanal (primer horario visto por día) para la renovación.
+  const porDia = new Map<number, string>();
+  for (const s of finales) {
+    const dia = s.fecha.getDay();
+    if (!porDia.has(dia)) porDia.set(dia, s.horaInicio);
+  }
+  const horarioSemanal = [...porDia.entries()].map(([dia, hora]) => ({ dia, hora }));
+
   let nuevoId = "";
   await prisma.$transaction(async (tx) => {
     const paquete = await tx.paquete.create({
@@ -219,8 +269,8 @@ export async function crearPaquete(
         pacienteId: data.pacienteId,
         programaId: data.programaId,
         totalSesiones: data.totalSesiones,
-        frecuenciaSemana: horario.length,
-        horarioSemanal: horario.map((h) => ({ dia: h.dia, hora: h.horaInicio })),
+        frecuenciaSemana: Math.max(1, porDia.size),
+        horarioSemanal,
         precio: data.precio,
         fechaInicio,
         fechaFin,
@@ -231,17 +281,19 @@ export async function crearPaquete(
     nuevoId = paquete.id;
 
     await tx.cita.createMany({
-      data: construirSesiones({
+      data: finales.map((s, i) => ({
         sedeId,
         pacienteId: data.pacienteId,
-        paqueteId: paquete.id,
         terapeutaId,
-        totalSesiones: data.totalSesiones,
-        horario,
-        duracionMin: programa.duracionMin,
-        fechaInicio,
-        feriados,
-      }),
+        paqueteId: paquete.id,
+        numeroSesion: i + 1,
+        fecha: s.fecha,
+        horaInicio: s.horaInicio,
+        horaFin: s.horaFin,
+        tipo: "SESION" as const,
+        estado: "AGENDADA" as const,
+        asistencia: "PENDIENTE" as const,
+      })),
     });
   });
 

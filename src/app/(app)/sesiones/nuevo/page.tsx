@@ -11,9 +11,10 @@ export default async function NuevoPaquetePage() {
 
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
-  // Horizonte para el calendario de disponibilidad (~17 semanas).
+  // Horizonte para el calendario de disponibilidad (~1 año: el usuario navega
+  // semana a semana marcando sesiones concretas).
   const horizonte = new Date(hoy);
-  horizonte.setDate(horizonte.getDate() + 120);
+  horizonte.setDate(horizonte.getDate() + 430);
 
   const [pacientes, terapeutas, programas, sede, feriados, citasFuturas] =
     await Promise.all([

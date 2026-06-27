@@ -1,13 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { Field, Input, Select, Textarea, Button } from "@/components/ui";
+import { Combobox } from "@/components/combobox";
 import { crearPaquete, type ActionState } from "../actions";
 import { DIA_NOMBRE, DIAS_ORDEN, claveFecha, generarIntervalos } from "../horario";
 
 const initial: ActionState = { ok: false };
-/** Máximo de semanas hacia adelante que se pueden previsualizar. */
-const MAX_SEMANAS = 16;
+/** Máximo de semanas hacia adelante que se pueden navegar (~1 año). */
+const MAX_SEMANAS = 60;
 
 type Opcion = { id: string; nombre: string };
 type ProgramaOpt = {
@@ -64,12 +65,13 @@ function fmtCorta(d: Date): string {
   return d.toLocaleDateString("es-PE", { day: "numeric", month: "short" });
 }
 
-function fmtLarga(d: Date): string {
-  return d.toLocaleDateString("es-PE", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
+/** "YYYY-MM-DD" → "lun 06/07" (para los chips de sesiones marcadas). */
+function fmtClave(clave: string): string {
+  const [y, m, d] = clave.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("es-PE", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
   });
 }
 
@@ -99,14 +101,22 @@ export default function NuevoPaqueteForm({
   const [pacienteId, setPacienteId] = useState("");
   const [terapeutaId, setTerapeutaId] = useState("");
   const [programaId, setProgramaId] = useState(programas[0]?.id ?? "");
-  // Día (getDay) → hora de inicio elegida. La presencia de la clave = día marcado.
-  const [diasHora, setDiasHora] = useState<Record<number, string>>({});
-  // Semana mostrada (y de inicio del paquete): 0 = semana actual.
+  // Total de sesiones a marcar (controlado: define cuántas faltan).
+  const [totalStr, setTotalStr] = useState("12");
+  // Sesiones marcadas: clave de fecha "YYYY-MM-DD" → hora de inicio.
+  // (Cada entrada es una sesión concreta; NO se repite por semana.)
+  const [sesionesSel, setSesionesSel] = useState<Record<string, string>>({});
+  // Semana mostrada: 0 = semana actual.
   const [semana, setSemana] = useState(0);
 
   const programa = programas.find((p) => p.id === programaId);
   const duracionMin = programa?.duracionMin ?? 45;
   const cupo = programa?.maxPacientes ?? 1;
+
+  const total = Math.max(0, Math.floor(Number(totalStr) || 0));
+  const marcadas = Object.keys(sesionesSel).length;
+  const faltan = Math.max(0, total - marcadas);
+  const completo = total > 0 && marcadas === total;
 
   const intervalos = useMemo(
     () => generarIntervalos(horaApertura, horaCierre, duracionMin),
@@ -131,9 +141,6 @@ export default function NuevoPaqueteForm({
     () => sumarDias(lunesBase, semana * 7),
     [lunesBase, semana],
   );
-  // El paquete inicia el primer día válido de la semana mostrada (>= hoy).
-  const inicioPaquete = lunesSemana < hoy ? hoy : lunesSemana;
-  const fechaInicioValue = claveFecha(inicioPaquete);
 
   // Fecha real de cada día laboral en la semana mostrada.
   const fechaDeDia = useMemo(() => {
@@ -144,19 +151,16 @@ export default function NuevoPaqueteForm({
     return m;
   }, [diasDisponibles, lunesSemana]);
 
-  // Al cambiar la duración, normaliza las horas elegidas a intervalos válidos.
-  useEffect(() => {
-    setDiasHora((prev) => {
-      const validas = new Set(intervalos.map((i) => i.inicio));
-      const siguiente: Record<number, string> = {};
-      for (const [dia, hora] of Object.entries(prev)) {
-        siguiente[Number(dia)] = validas.has(hora)
-          ? hora
-          : (intervalos[0]?.inicio ?? "");
-      }
-      return siguiente;
-    });
-  }, [intervalos]);
+  // Cambiar de programa (duración) o terapeuta invalida las horas/colores: se
+  // limpian las sesiones marcadas para evitar selecciones inconsistentes.
+  function cambiarPrograma(id: string) {
+    setProgramaId(id);
+    setSesionesSel({});
+  }
+  function cambiarTerapeuta(id: string) {
+    setTerapeutaId(id);
+    setSesionesSel({});
+  }
 
   // Disponibilidad por celda (día + intervalo) en la SEMANA MOSTRADA, según las
   // citas reales del terapeuta y del paciente elegidos.
@@ -173,7 +177,7 @@ export default function NuevoPaqueteForm({
     for (const dia of diasDisponibles) {
       const clave = claveFecha(fechaDeDia.get(dia)!);
       for (const intv of intervalos) {
-        const key = `${dia}|${intv.inicio}`;
+        const key = `${clave}|${intv.inicio}`;
 
         if (clave < hoyClave) {
           mapa.set(key, "pasado");
@@ -222,29 +226,41 @@ export default function NuevoPaqueteForm({
     hoyClave,
   ]);
 
-  function toggleCelda(dia: number, hora: string, seleccionable: boolean) {
-    setDiasHora((prev) => {
-      const siguiente = { ...prev };
-      if (siguiente[dia] === hora) {
-        delete siguiente[dia]; // clic en la celda ya elegida → la quita
-        return siguiente;
+  function toggleCelda(clave: string, hora: string, seleccionable: boolean) {
+    setSesionesSel((prev) => {
+      const next = { ...prev };
+      // Clic en la celda ya elegida ese día → la quita.
+      if (next[clave] === hora) {
+        delete next[clave];
+        return next;
       }
       if (!seleccionable) return prev;
-      siguiente[dia] = hora; // una sola hora por día
-      return siguiente;
+      const yaTieneEseDia = clave in next;
+      // No permitir superar el total (salvo que sea mover la hora del mismo día).
+      if (!yaTieneEseDia && total > 0 && Object.keys(next).length >= total) {
+        return prev;
+      }
+      next[clave] = hora; // una sola hora por día concreto
+      return next;
     });
   }
 
-  const diasSeleccionados = Object.keys(diasHora).map(Number);
-  const horarioJSON = JSON.stringify(
-    diasSeleccionados
-      .sort((a, b) => a - b)
-      .map((dia) => ({ dia, hora: diasHora[dia] })),
+  // Sesiones marcadas en orden cronológico (clave "YYYY-MM-DD" ordena bien).
+  const seleccionadas = useMemo(
+    () =>
+      Object.entries(sesionesSel)
+        .map(([clave, hora]) => ({ clave, hora }))
+        .sort((a, b) =>
+          a.clave === b.clave
+            ? a.hora.localeCompare(b.hora)
+            : a.clave.localeCompare(b.clave),
+        ),
+    [sesionesSel],
   );
 
-  const resumen = DIAS_ORDEN.filter((d) => d in diasHora)
-    .map((d) => `${DIA_NOMBRE[d].slice(0, 3)} ${diasHora[d]}`)
-    .join(" · ");
+  const sesionesJSON = JSON.stringify(
+    seleccionadas.map((s) => ({ fecha: s.clave, hora: s.hora })),
+  );
 
   const sinIntervalos = intervalos.length === 0;
   const finSemana = sumarDias(lunesSemana, 5); // sáb
@@ -252,25 +268,17 @@ export default function NuevoPaqueteForm({
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="sedeId" value={sedeId} />
-      <input type="hidden" name="horario" value={horarioJSON} />
-      <input type="hidden" name="fechaInicio" value={fechaInicioValue} />
+      <input type="hidden" name="sesiones" value={sesionesJSON} />
 
       <Field label="Paciente" required>
-        <Select
+        <Combobox
           name="pacienteId"
           required
+          options={pacientes}
           value={pacienteId}
-          onChange={(e) => setPacienteId(e.target.value)}
-        >
-          <option value="" disabled>
-            Seleccione un paciente…
-          </option>
-          {pacientes.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre}
-            </option>
-          ))}
-        </Select>
+          onChange={setPacienteId}
+          placeholder="Seleccione un paciente…"
+        />
       </Field>
 
       <Field label="Programa" required>
@@ -278,7 +286,7 @@ export default function NuevoPaqueteForm({
           name="programaId"
           required
           value={programaId}
-          onChange={(e) => setProgramaId(e.target.value)}
+          onChange={(e) => cambiarPrograma(e.target.value)}
         >
           {programas.map((p) => (
             <option key={p.id} value={p.id}>
@@ -293,7 +301,7 @@ export default function NuevoPaqueteForm({
           name="terapeutaId"
           required
           value={terapeutaId}
-          onChange={(e) => setTerapeutaId(e.target.value)}
+          onChange={(e) => cambiarTerapeuta(e.target.value)}
         >
           <option value="" disabled>
             Seleccione un terapeuta…
@@ -312,7 +320,23 @@ export default function NuevoPaqueteForm({
         )}
       </Field>
 
-      <Field label="Disponibilidad — elige los días y la hora" required>
+      <Field label="Total de sesiones" required>
+        <Input
+          type="number"
+          name="totalSesiones"
+          min={1}
+          max={60}
+          value={totalStr}
+          onChange={(e) => setTotalStr(e.target.value)}
+          required
+          className="max-w-[10rem]"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Marca esta cantidad de sesiones en el calendario, una por una.
+        </p>
+      </Field>
+
+      <Field label="Calendario — marca cada sesión en su fecha" required>
         {sinIntervalos ? (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
             El horario de atención de la sede no permite sesiones de{" "}
@@ -325,6 +349,31 @@ export default function NuevoPaqueteForm({
           </p>
         ) : (
           <div className="space-y-3">
+            {/* Progreso de marcado */}
+            <div
+              className={[
+                "rounded-lg px-3 py-2 text-sm",
+                completo
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-sky-50 text-sky-800",
+              ].join(" ")}
+            >
+              {completo ? (
+                <>
+                  Listo: marcaste las <b>{total}</b> sesiones.
+                </>
+              ) : marcadas === 0 ? (
+                <>
+                  Marca <b>{total}</b> sesión(es) navegando por las semanas.
+                </>
+              ) : (
+                <>
+                  Marcadas <b>{marcadas}</b> de <b>{total}</b> · faltan{" "}
+                  <b>{faltan}</b>.
+                </>
+              )}
+            </div>
+
             {/* Navegación de semana */}
             <div className="flex items-center justify-between gap-2">
               <button
@@ -374,18 +423,28 @@ export default function NuevoPaqueteForm({
                         {intv.inicio}
                       </td>
                       {diasDisponibles.map((d) => {
+                        const clave = claveFecha(fechaDeDia.get(d)!);
                         const estado =
-                          disponibilidad.get(`${d}|${intv.inicio}`) ?? "libre";
-                        const elegido = diasHora[d] === intv.inicio;
+                          disponibilidad.get(`${clave}|${intv.inicio}`) ??
+                          "libre";
+                        const elegido = sesionesSel[clave] === intv.inicio;
                         const seleccionable =
                           estado === "libre" || estado === "parcial";
+                        // Si ya se alcanzó el total, no se pueden añadir nuevas.
+                        const bloqueadoPorTope =
+                          !elegido &&
+                          !(clave in sesionesSel) &&
+                          total > 0 &&
+                          marcadas >= total;
+                        const deshabilitado =
+                          (!seleccionable && !elegido) || bloqueadoPorTope;
                         return (
                           <td key={d} className="p-0">
                             <button
                               type="button"
-                              disabled={!seleccionable && !elegido}
+                              disabled={deshabilitado}
                               onClick={() =>
-                                toggleCelda(d, intv.inicio, seleccionable)
+                                toggleCelda(clave, intv.inicio, seleccionable)
                               }
                               title={`${DIA_NOMBRE[d]} ${fechaDeDia
                                 .get(d)!
@@ -394,17 +453,19 @@ export default function NuevoPaqueteForm({
                                 "w-full rounded px-2 py-1 text-[11px] font-medium transition",
                                 elegido
                                   ? "bg-sky-600 text-white"
-                                  : estado === "libre"
-                                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                    : estado === "parcial"
-                                      ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                      : estado === "lleno"
-                                        ? "cursor-not-allowed bg-red-50 text-red-300"
-                                        : estado === "feriado"
-                                          ? "cursor-not-allowed bg-violet-50 text-violet-400"
-                                          : estado === "pacienteOcupado"
-                                            ? "cursor-not-allowed bg-slate-100 text-slate-300"
-                                            : "cursor-not-allowed bg-slate-50 text-slate-300",
+                                  : bloqueadoPorTope && seleccionable
+                                    ? "cursor-not-allowed bg-slate-50 text-slate-300"
+                                    : estado === "libre"
+                                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                      : estado === "parcial"
+                                        ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                        : estado === "lleno"
+                                          ? "cursor-not-allowed bg-red-50 text-red-300"
+                                          : estado === "feriado"
+                                            ? "cursor-not-allowed bg-violet-50 text-violet-400"
+                                            : estado === "pacienteOcupado"
+                                              ? "cursor-not-allowed bg-slate-100 text-slate-300"
+                                              : "cursor-not-allowed bg-slate-50 text-slate-300",
                               ].join(" ")}
                             >
                               {elegido
@@ -445,39 +506,36 @@ export default function NuevoPaqueteForm({
               <Leyenda clase="bg-sky-600 text-white" texto="Elegido" />
             </div>
 
-            <p className="text-[11px] text-slate-400">
-              Los colores muestran la ocupación de la semana visible. El patrón
-              de días/horas elegido se repite cada semana.
-            </p>
-
-            {resumen && (
-              <p className="text-xs text-slate-600">
-                <span className="font-medium">Días elegidos:</span> {resumen}
-              </p>
+            {seleccionadas.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-slate-600">
+                  Sesiones marcadas ({seleccionadas.length}):
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {seleccionadas.map((s) => (
+                    <button
+                      key={s.clave}
+                      type="button"
+                      onClick={() =>
+                        setSesionesSel((prev) => {
+                          const n = { ...prev };
+                          delete n[s.clave];
+                          return n;
+                        })
+                      }
+                      title="Quitar esta sesión"
+                      className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-800 hover:bg-sky-200"
+                    >
+                      {fmtClave(s.clave)} · {s.hora}
+                      <span className="text-sky-500">×</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
       </Field>
-
-      <Field label="Total de sesiones" required>
-        <Input
-          type="number"
-          name="totalSesiones"
-          min={1}
-          max={60}
-          defaultValue={12}
-          required
-          className="max-w-[10rem]"
-        />
-      </Field>
-
-      {terapeutaId && !sinIntervalos && (
-        <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">
-          El paquete iniciará el <b>{fmtLarga(inicioPaquete)}</b> y las sesiones
-          se repetirán semanalmente en los días elegidos. Usa ‹ › para empezar en
-          otra semana.
-        </p>
-      )}
 
       <Field label="Precio (S/)" required>
         <Input
@@ -496,8 +554,8 @@ export default function NuevoPaqueteForm({
 
       {feriados.length > 0 && (
         <p className="text-xs text-slate-400">
-          Se omitirán automáticamente los {feriados.length} feriado(s)
-          configurado(s) en esta sede.
+          Los días feriados de la sede aparecen marcados y no se pueden
+          seleccionar.
         </p>
       )}
 
@@ -510,9 +568,13 @@ export default function NuevoPaqueteForm({
       <div className="flex justify-end gap-2 pt-2">
         <Button
           type="submit"
-          disabled={pending || sinIntervalos || diasSeleccionados.length === 0}
+          disabled={pending || sinIntervalos || !terapeutaId || !completo}
         >
-          {pending ? "Creando…" : "Crear paquete"}
+          {pending
+            ? "Creando…"
+            : completo
+              ? "Crear paquete"
+              : `Faltan ${faltan} sesión(es)`}
         </Button>
       </div>
     </form>
