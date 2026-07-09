@@ -9,8 +9,11 @@ import {
   Table,
   Th,
   Td,
+  Paginacion,
 } from "@/components/ui";
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
+
+const POR_PAGINA = 20;
 
 const METODO_LABEL: Record<string, string> = {
   EFECTIVO: "Efectivo",
@@ -66,6 +69,7 @@ export default async function PagosPage({
     desde?: string;
     hasta?: string;
     q?: string;
+    pagina?: string;
   }>;
 }) {
   const user = await requireUser();
@@ -111,9 +115,24 @@ export default async function PagosPage({
       }
     : {};
 
+  const where = { sedeId, fechaPago: fechaFilter, ...pacienteFilter };
+
+  // Total y suma del periodo completo (no solo de la página visible).
+  const [totalRegistros, agregado] = await Promise.all([
+    prisma.pago.count({ where }),
+    prisma.pago.aggregate({ where, _sum: { monto: true } }),
+  ]);
+  const totalPaginas = Math.max(1, Math.ceil(totalRegistros / POR_PAGINA));
+  const paginaPedida = Number.parseInt(sp.pagina ?? "1", 10);
+  const pagina = Number.isNaN(paginaPedida)
+    ? 1
+    : Math.min(Math.max(1, paginaPedida), totalPaginas);
+
   const pagos = await prisma.pago.findMany({
-    where: { sedeId, fechaPago: fechaFilter, ...pacienteFilter },
+    where,
     orderBy: { fechaPago: "desc" },
+    skip: (pagina - 1) * POR_PAGINA,
+    take: POR_PAGINA,
     select: {
       id: true,
       numeroRecibo: true,
@@ -129,7 +148,14 @@ export default async function PagosPage({
     },
   });
 
-  const total = pagos.reduce((acc, p) => acc + Number(p.monto), 0);
+  const total = Number(agregado._sum.monto ?? 0);
+
+  // Query params a conservar al cambiar de página.
+  const paramsPaginacion: Record<string, string> = {};
+  if (termino) paramsPaginacion.q = termino;
+  if (sp.mes) paramsPaginacion.mes = sp.mes;
+  if (sp.desde) paramsPaginacion.desde = sp.desde;
+  if (sp.hasta) paramsPaginacion.hasta = sp.hasta;
 
   return (
     <>
@@ -272,8 +298,15 @@ export default async function PagosPage({
             </tfoot>
           </Table>
           <p className="text-sm text-slate-500">
-            {pagos.length} pago(s) · Total cobrado: {soles(total)}
+            {totalRegistros} pago(s) · Total cobrado: {soles(total)}
           </p>
+          <Paginacion
+            pagina={pagina}
+            totalPaginas={totalPaginas}
+            total={totalRegistros}
+            hrefBase="/pagos"
+            params={paramsPaginacion}
+          />
         </>
       )}
     </>

@@ -9,17 +9,34 @@ import {
   Th,
   Td,
   Badge,
+  Paginacion,
 } from "@/components/ui";
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
 import { estadoPaqueteColor, estadoPaqueteLabel } from "./ui";
 
-export default async function SesionesPage() {
+const POR_PAGINA = 20;
+
+export default async function SesionesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pagina?: string }>;
+}) {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
+  const { pagina: paginaParam } = await searchParams;
+
+  const total = await prisma.paquete.count({ where: { sedeId } });
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  const paginaPedida = Number.parseInt(paginaParam ?? "1", 10);
+  const pagina = Number.isNaN(paginaPedida)
+    ? 1
+    : Math.min(Math.max(1, paginaPedida), totalPaginas);
 
   const paquetes = await prisma.paquete.findMany({
     where: { sedeId },
     orderBy: { createdAt: "desc" },
+    skip: (pagina - 1) * POR_PAGINA,
+    take: POR_PAGINA,
     select: {
       id: true,
       totalSesiones: true,
@@ -106,6 +123,13 @@ export default async function SesionesPage() {
           </tbody>
         </Table>
       )}
+
+      <Paginacion
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        total={total}
+        hrefBase="/sesiones"
+      />
     </div>
   );
 }
