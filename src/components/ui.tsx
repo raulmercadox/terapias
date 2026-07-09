@@ -190,6 +190,61 @@ export function Td({ children, className }: { children?: ReactNode; className?: 
   return <td className={cn("px-4 py-3 text-slate-700", className)}>{children}</td>;
 }
 
+/* ── Paginación ───────────────────────────────────────── */
+
+export function Paginacion({
+  pagina,
+  totalPaginas,
+  total,
+  hrefBase,
+  params = {},
+}: {
+  pagina: number;
+  totalPaginas: number;
+  total: number;
+  hrefBase: string;
+  /** Query params extra a conservar al cambiar de página (ej. búsqueda). */
+  params?: Record<string, string>;
+}) {
+  if (totalPaginas <= 1) return null;
+
+  const href = (p: number) => {
+    const qs = new URLSearchParams(params);
+    if (p > 1) qs.set("pagina", String(p));
+    const s = qs.toString();
+    return s ? `${hrefBase}?${s}` : hrefBase;
+  };
+
+  const linkBase =
+    "inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50";
+  const disabledBase =
+    "inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-400";
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-slate-500">
+        Página {pagina} de {totalPaginas} · {total} registro{total === 1 ? "" : "s"}
+      </p>
+      <div className="flex gap-2">
+        {pagina > 1 ? (
+          <Link href={href(pagina - 1)} className={linkBase}>
+            ← Anterior
+          </Link>
+        ) : (
+          <span className={disabledBase}>← Anterior</span>
+        )}
+        {pagina < totalPaginas ? (
+          <Link href={href(pagina + 1)} className={linkBase}>
+            Siguiente →
+          </Link>
+        ) : (
+          <span className={disabledBase}>Siguiente →</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Badge ────────────────────────────────────────────── */
 
 const badgeColors: Record<string, string> = {

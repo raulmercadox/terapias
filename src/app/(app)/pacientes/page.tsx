@@ -9,40 +9,55 @@ import {
   Table,
   Th,
   Td,
+  Paginacion,
 } from "@/components/ui";
 import { nombreCompleto, edad } from "@/lib/utils";
 
-const PROGRAMA_LABEL: Record<string, string> = {
-  ESCOLAR: "Escolar",
-  INTERDIARIO: "Terapias Grupales",
-  TERAPIAS: "Terapia Individual",
-};
+const POR_PAGINA = 20;
 
 export default async function PacientesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; pagina?: string }>;
 }) {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
-  const { q } = await searchParams;
+  const { q, pagina: paginaParam } = await searchParams;
   const termino = (q ?? "").trim();
 
+  const where = {
+    sedeId,
+    ...(termino
+      ? {
+          OR: [
+            { nombres: { contains: termino, mode: "insensitive" as const } },
+            { apellidoPaterno: { contains: termino, mode: "insensitive" as const } },
+            { apellidoMaterno: { contains: termino, mode: "insensitive" as const } },
+            { dni: { contains: termino, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+
+  const total = await prisma.paciente.count({ where });
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  const paginaPedida = Number.parseInt(paginaParam ?? "1", 10);
+  const pagina = Number.isNaN(paginaPedida)
+    ? 1
+    : Math.min(Math.max(1, paginaPedida), totalPaginas);
+
   const pacientes = await prisma.paciente.findMany({
-    where: {
-      sedeId,
-      ...(termino
-        ? {
-            OR: [
-              { nombres: { contains: termino, mode: "insensitive" } },
-              { apellidoPaterno: { contains: termino, mode: "insensitive" } },
-              { apellidoMaterno: { contains: termino, mode: "insensitive" } },
-              { dni: { contains: termino, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
+    where,
     orderBy: [{ apellidoPaterno: "asc" }, { nombres: "asc" }],
+    skip: (pagina - 1) * POR_PAGINA,
+    take: POR_PAGINA,
+    include: {
+      // Programas de los paquetes ACTIVOS del paciente (puede tener varios).
+      paquetes: {
+        where: { estado: "ACTIVO" },
+        select: { programa: { select: { nombre: true } } },
+      },
+    },
   });
 
   return (
@@ -92,7 +107,17 @@ export default async function PacientesPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {pacientes.map((p) => (
+            {pacientes.map((p) => {
+              // Nombres únicos de los programas con paquete activo (los paquetes
+              // antiguos sin programa asignado no aportan nombre).
+              const programas = [
+                ...new Set(
+                  p.paquetes
+                    .map((pq) => pq.programa?.nombre)
+                    .filter((n): n is string => Boolean(n)),
+                ),
+              ];
+              return (
               <tr key={p.id} className="hover:bg-slate-50">
                 <Td>
                   <Link
@@ -105,7 +130,19 @@ export default async function PacientesPage({
                 <Td>{edad(p.fechaNacimiento)}</Td>
                 <Td>{p.dni ?? "—"}</Td>
                 <Td>{p.telefono ?? "—"}</Td>
-                <Td>{PROGRAMA_LABEL[p.programa] ?? p.programa}</Td>
+                <Td>
+                  {programas.length === 0 ? (
+                    <span className="text-slate-400">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {programas.map((nombre) => (
+                        <Badge key={nombre} color="sky">
+                          {nombre}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </Td>
                 <Td>
                   {p.estado === "ACTIVO" ? (
                     <Badge color="green">ACTIVO</Badge>
@@ -114,10 +151,19 @@ export default async function PacientesPage({
                   )}
                 </Td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </Table>
       )}
+
+      <Paginacion
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        total={total}
+        hrefBase="/pacientes"
+        params={termino ? { q: termino } : {}}
+      />
     </div>
   );
 }
