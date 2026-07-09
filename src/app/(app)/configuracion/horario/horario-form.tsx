@@ -2,14 +2,15 @@
 
 import { useActionState } from "react";
 import { guardarHorarioLaboral, type FormState } from "../actions";
-import { Button, Field, Input } from "@/components/ui";
-import { DIA_NOMBRE, DIAS_ORDEN } from "../../sesiones/horario";
+import { Button, Field, Input, Select } from "@/components/ui";
+import { DIA_NOMBRE, DIAS_ORDEN, PASOS_GRILLA } from "../../sesiones/horario";
 
 type SedeHorario = {
   id: string;
   horaApertura: string;
   horaCierre: string;
   diasLaborales: number[];
+  intervaloCalendario: number;
 };
 
 export function HorarioForm({
@@ -46,6 +47,24 @@ export function HorarioForm({
           />
         </Field>
       </div>
+
+      <Field label="Intervalo del calendario (minutos)">
+        <Select
+          name="intervaloCalendario"
+          defaultValue={String(sede.intervaloCalendario)}
+          className="max-w-[12rem]"
+        >
+          {PASOS_GRILLA.map((p) => (
+            <option key={p} value={p}>
+              {p} minutos
+            </option>
+          ))}
+        </Select>
+        <p className="mt-1 text-xs text-slate-400">
+          Cada cuántos minutos se ofrecen horas de inicio al agendar un paquete.
+          En el calendario se puede cambiar al vuelo; este es el valor inicial.
+        </p>
+      </Field>
 
       <Field label="Días de atención">
         <div className="flex flex-wrap gap-3">

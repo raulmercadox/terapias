@@ -4,7 +4,13 @@ import { useActionState, useMemo, useState } from "react";
 import { Field, Input, Select, Textarea, Button } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { crearPaquete, type ActionState } from "../actions";
-import { DIA_NOMBRE, DIAS_ORDEN, claveFecha, generarIntervalos } from "../horario";
+import {
+  DIA_NOMBRE,
+  DIAS_ORDEN,
+  PASOS_GRILLA,
+  claveFecha,
+  generarIntervalos,
+} from "../horario";
 
 const initial: ActionState = { ok: false };
 /** Máximo de semanas hacia adelante que se pueden navegar (~1 año). */
@@ -83,6 +89,7 @@ export default function NuevoPaqueteForm({
   horaApertura,
   horaCierre,
   diasLaborales,
+  intervaloCalendario,
   feriados,
   citas,
 }: {
@@ -93,6 +100,7 @@ export default function NuevoPaqueteForm({
   horaApertura: string;
   horaCierre: string;
   diasLaborales: number[];
+  intervaloCalendario: number;
   feriados: string[];
   citas: CitaOcup[];
 }) {
@@ -108,6 +116,13 @@ export default function NuevoPaqueteForm({
   const [sesionesSel, setSesionesSel] = useState<Record<string, string>>({});
   // Semana mostrada: 0 = semana actual.
   const [semana, setSemana] = useState(0);
+  // Paso de la grilla (min entre horas de inicio ofrecidas). Es solo un modo
+  // de vista: cambiarlo no borra las sesiones ya marcadas.
+  const [paso, setPaso] = useState(
+    PASOS_GRILLA.includes(intervaloCalendario as (typeof PASOS_GRILLA)[number])
+      ? intervaloCalendario
+      : 30,
+  );
 
   const programa = programas.find((p) => p.id === programaId);
   const duracionMin = programa?.duracionMin ?? 45;
@@ -119,8 +134,8 @@ export default function NuevoPaqueteForm({
   const completo = total > 0 && marcadas === total;
 
   const intervalos = useMemo(
-    () => generarIntervalos(horaApertura, horaCierre, duracionMin),
-    [horaApertura, horaCierre, duracionMin],
+    () => generarIntervalos(horaApertura, horaCierre, duracionMin, paso),
+    [horaApertura, horaCierre, duracionMin, paso],
   );
 
   // Días disponibles (laborales) en orden lunes→domingo.
@@ -372,6 +387,22 @@ export default function NuevoPaqueteForm({
                   <b>{faltan}</b>.
                 </>
               )}
+            </div>
+
+            {/* Paso de la grilla (modo de vista) */}
+            <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
+              <span>Intervalo:</span>
+              <select
+                value={paso}
+                onChange={(e) => setPaso(Number(e.target.value))}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-sky-500 focus:outline-none"
+              >
+                {PASOS_GRILLA.map((p) => (
+                  <option key={p} value={p}>
+                    {p} min
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Navegación de semana */}

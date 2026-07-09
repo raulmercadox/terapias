@@ -367,6 +367,9 @@ const horarioSchema = z
     diasLaborales: z
       .array(z.coerce.number().int().min(0).max(6))
       .min(1, "Seleccione al menos un día laboral."),
+    intervaloCalendario: z.coerce
+      .number()
+      .refine((v) => [15, 30, 45, 60].includes(v), "Intervalo inválido."),
   })
   .refine((d) => d.horaCierre > d.horaApertura, {
     message: "El cierre debe ser posterior a la apertura.",
@@ -384,10 +387,12 @@ export async function guardarHorarioLaboral(
     horaApertura: String(formData.get("horaApertura") ?? ""),
     horaCierre: String(formData.get("horaCierre") ?? ""),
     diasLaborales: formData.getAll("diasLaborales").map((d) => Number(d)),
+    intervaloCalendario: String(formData.get("intervaloCalendario") ?? "30"),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { sedeId, horaApertura, horaCierre, diasLaborales } = parsed.data;
+  const { sedeId, horaApertura, horaCierre, diasLaborales, intervaloCalendario } =
+    parsed.data;
 
   const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
   if (!sede) return { error: "La sede seleccionada no existe." };
@@ -397,7 +402,7 @@ export async function guardarHorarioLaboral(
 
   await prisma.sede.update({
     where: { id: sedeId },
-    data: { horaApertura, horaCierre, diasLaborales: dias },
+    data: { horaApertura, horaCierre, diasLaborales: dias, intervaloCalendario },
   });
 
   revalidatePath("/configuracion/horario");

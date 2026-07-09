@@ -22,6 +22,7 @@ import {
   aMinutos,
   sumarMinutos,
   DIA_NOMBRE,
+  PASO_GRILLA_MIN,
 } from "./horario";
 import { fecha as fmtFecha } from "@/lib/utils";
 
@@ -206,7 +207,13 @@ export async function crearPaquete(
       };
     }
     if (
-      !esIntervaloValido(sede.horaApertura, sede.horaCierre, programa.duracionMin, s.hora)
+      !esIntervaloValido(
+        sede.horaApertura,
+        sede.horaCierre,
+        programa.duracionMin,
+        s.hora,
+        PASO_GRILLA_MIN,
+      )
     ) {
       return {
         ok: false,

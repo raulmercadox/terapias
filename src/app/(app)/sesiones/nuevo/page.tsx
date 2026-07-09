@@ -40,7 +40,12 @@ export default async function NuevoPaquetePage() {
     }),
     prisma.sede.findUnique({
       where: { id: sedeId },
-      select: { horaApertura: true, horaCierre: true, diasLaborales: true },
+      select: {
+        horaApertura: true,
+        horaCierre: true,
+        diasLaborales: true,
+        intervaloCalendario: true,
+      },
     }),
     prisma.feriado.findMany({
       where: { sedeId, fecha: { gte: hoy } },
@@ -97,6 +102,7 @@ export default async function NuevoPaquetePage() {
             horaApertura={sede?.horaApertura ?? "09:00"}
             horaCierre={sede?.horaCierre ?? "13:00"}
             diasLaborales={sede?.diasLaborales ?? [1, 2, 3, 4, 5, 6]}
+            intervaloCalendario={sede?.intervaloCalendario ?? 30}
             feriados={feriados.map((f) => claveFecha(f.fecha))}
             citas={citasFuturas.map((c) => ({
               terapeutaId: c.terapeutaId,

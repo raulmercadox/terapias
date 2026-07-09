@@ -23,6 +23,7 @@ export default async function HorarioPage({
       horaApertura: true,
       horaCierre: true,
       diasLaborales: true,
+      intervaloCalendario: true,
     },
   });
 

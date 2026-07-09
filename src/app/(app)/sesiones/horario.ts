@@ -39,35 +39,55 @@ export function sumarMinutos(hhmm: string, mins: number): string {
 
 export type Intervalo = { inicio: string; fin: string };
 
+/** Pasos de grilla disponibles en el calendario (minutos entre inicios). */
+export const PASOS_GRILLA = [15, 30, 45, 60] as const;
+/** Paso más fino ofrecido: el servidor valida el alineamiento contra este. */
+export const PASO_GRILLA_MIN = 15;
+
 /**
- * Divide [apertura, cierre) en bloques de `duracionMin`. Solo incluye bloques
- * que terminen en/antes de `cierre`. Devuelve [] si los datos son inválidos.
+ * Genera las horas de inicio posibles dentro de [apertura, cierre): una cada
+ * `paso` minutos (por defecto, cada `duracionMin`), siempre que la sesión
+ * completa (`duracionMin`) quepa antes del cierre. `fin` = inicio + duración.
+ * El paso y la duración son independientes: una grilla de 15 min puede ofrecer
+ * inicios 9:00/9:15/9:30… para sesiones de 90 min. Devuelve [] si los datos
+ * son inválidos.
  */
 export function generarIntervalos(
   apertura: string,
   cierre: string,
   duracionMin: number,
+  paso: number = duracionMin,
 ): Intervalo[] {
   const ini = aMinutos(apertura);
   const fin = aMinutos(cierre);
-  if (Number.isNaN(ini) || Number.isNaN(fin) || !(duracionMin > 0)) return [];
+  if (Number.isNaN(ini) || Number.isNaN(fin)) return [];
+  if (!(duracionMin > 0) || !(paso > 0)) return [];
   const out: Intervalo[] = [];
-  for (let t = ini; t + duracionMin <= fin; t += duracionMin) {
+  for (let t = ini; t + duracionMin <= fin; t += paso) {
     out.push({ inicio: aHHMM(t), fin: aHHMM(t + duracionMin) });
   }
   return out;
 }
 
-/** ¿`horaInicio` es el inicio de un intervalo válido dentro del horario? */
+/**
+ * ¿`horaInicio` es un inicio válido? Debe estar alineado al `paso` desde la
+ * apertura y la sesión completa debe caber antes del cierre. El servidor usa
+ * `PASO_GRILLA_MIN` (el paso más fino del selector de vista) para aceptar
+ * cualquier inicio que el calendario pueda ofrecer.
+ */
 export function esIntervaloValido(
   apertura: string,
   cierre: string,
   duracionMin: number,
   horaInicio: string,
+  paso: number = duracionMin,
 ): boolean {
-  return generarIntervalos(apertura, cierre, duracionMin).some(
-    (i) => i.inicio === horaInicio,
-  );
+  const ini = aMinutos(apertura);
+  const fin = aMinutos(cierre);
+  const h = aMinutos(horaInicio);
+  if (Number.isNaN(ini) || Number.isNaN(fin) || Number.isNaN(h)) return false;
+  if (!(duracionMin > 0) || !(paso > 0)) return false;
+  return h >= ini && (h - ini) % paso === 0 && h + duracionMin <= fin;
 }
 
 /** Date → "YYYY-MM-DD" en horario local (clave para comparar feriados). */
