@@ -367,13 +367,36 @@ const horarioSchema = z
     diasLaborales: z
       .array(z.coerce.number().int().min(0).max(6))
       .min(1, "Seleccione al menos un día laboral."),
-    intervaloCalendario: z.coerce
-      .number()
-      .refine((v) => [15, 30, 45, 60].includes(v), "Intervalo inválido."),
+    // Lista escrita como "15, 30, 45, 60": opciones del selector de intervalo.
+    intervalosCalendario: z
+      .string()
+      .transform((s) =>
+        s
+          .split(/[,;\s]+/)
+          .filter(Boolean)
+          .map((v) => Number(v)),
+      )
+      .refine(
+        (arr) => arr.length > 0,
+        "Ingrese al menos un intervalo (ej. 15, 30, 45, 60).",
+      )
+      .refine((arr) => arr.length <= 10, "Máximo 10 intervalos.")
+      .refine(
+        (arr) =>
+          arr.every(
+            (v) => Number.isInteger(v) && v >= 5 && v <= 120 && v % 5 === 0,
+          ),
+        "Cada intervalo debe ser un múltiplo de 5 entre 5 y 120 minutos.",
+      ),
+    intervaloCalendario: z.coerce.number().int("Intervalo inicial inválido."),
   })
   .refine((d) => d.horaCierre > d.horaApertura, {
     message: "El cierre debe ser posterior a la apertura.",
     path: ["horaCierre"],
+  })
+  .refine((d) => d.intervalosCalendario.includes(d.intervaloCalendario), {
+    message: "El intervalo inicial debe estar en la lista de intervalos.",
+    path: ["intervaloCalendario"],
   });
 
 export async function guardarHorarioLaboral(
@@ -387,22 +410,38 @@ export async function guardarHorarioLaboral(
     horaApertura: String(formData.get("horaApertura") ?? ""),
     horaCierre: String(formData.get("horaCierre") ?? ""),
     diasLaborales: formData.getAll("diasLaborales").map((d) => Number(d)),
+    intervalosCalendario: String(formData.get("intervalosCalendario") ?? ""),
     intervaloCalendario: String(formData.get("intervaloCalendario") ?? "30"),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { sedeId, horaApertura, horaCierre, diasLaborales, intervaloCalendario } =
-    parsed.data;
+  const {
+    sedeId,
+    horaApertura,
+    horaCierre,
+    diasLaborales,
+    intervalosCalendario,
+    intervaloCalendario,
+  } = parsed.data;
 
   const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
   if (!sede) return { error: "La sede seleccionada no existe." };
 
   // Orden ascendente y sin duplicados.
   const dias = Array.from(new Set(diasLaborales)).sort((a, b) => a - b);
+  const intervalos = Array.from(new Set(intervalosCalendario)).sort(
+    (a, b) => a - b,
+  );
 
   await prisma.sede.update({
     where: { id: sedeId },
-    data: { horaApertura, horaCierre, diasLaborales: dias, intervaloCalendario },
+    data: {
+      horaApertura,
+      horaCierre,
+      diasLaborales: dias,
+      intervalosCalendario: intervalos,
+      intervaloCalendario,
+    },
   });
 
   revalidatePath("/configuracion/horario");

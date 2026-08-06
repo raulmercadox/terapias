@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, assertSedeAccess } from "@/lib/session";
+import { requireUser, assertSedeAccess, puedeVerPagos } from "@/lib/session";
 import {
   construirSesiones,
   generarSesiones,
@@ -455,6 +455,10 @@ export async function actualizarPaquete(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  // Editar el precio es una operación sobre montos: no la hace el rol USUARIO.
+  if (!puedeVerPagos(user)) {
+    return { ok: false, error: "No tiene permisos para esta operación." };
+  }
   const parsed = actualizarPaqueteSchema.safeParse(
     Object.fromEntries(formData.entries()),
   );

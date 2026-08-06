@@ -45,6 +45,7 @@ export default async function NuevoPaquetePage() {
         horaCierre: true,
         diasLaborales: true,
         intervaloCalendario: true,
+        intervalosCalendario: true,
       },
     }),
     prisma.feriado.findMany({
@@ -103,6 +104,7 @@ export default async function NuevoPaquetePage() {
             horaCierre={sede?.horaCierre ?? "13:00"}
             diasLaborales={sede?.diasLaborales ?? [1, 2, 3, 4, 5, 6]}
             intervaloCalendario={sede?.intervaloCalendario ?? 30}
+            intervalosCalendario={sede?.intervalosCalendario ?? []}
             feriados={feriados.map((f) => claveFecha(f.fecha))}
             citas={citasFuturas.map((c) => ({
               terapeutaId: c.terapeutaId,

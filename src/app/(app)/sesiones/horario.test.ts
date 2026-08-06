@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   generarIntervalos,
   esIntervaloValido,
+  opcionesPaso,
   PASO_GRILLA_MIN,
 } from "./horario";
 
@@ -30,13 +31,29 @@ test("sin paso explícito conserva el comportamiento anterior (paso = duración)
 });
 
 test("esIntervaloValido acepta inicios alineados al paso y que quepan", () => {
-  // El servidor valida contra el paso más fino del selector (15 min).
+  // El servidor valida contra el paso más fino configurable (5 min).
   assert.equal(esIntervaloValido("09:00", "13:00", 90, "09:45", PASO_GRILLA_MIN), true);
   assert.equal(esIntervaloValido("09:00", "13:00", 90, "11:30", PASO_GRILLA_MIN), true);
-  // Desalineado del paso (9:50 no es múltiplo de 15 desde las 9:00).
-  assert.equal(esIntervaloValido("09:00", "13:00", 90, "09:50", PASO_GRILLA_MIN), false);
+  // 9:50 ahora es válido: está alineado a 5 min desde las 9:00.
+  assert.equal(esIntervaloValido("09:00", "13:00", 90, "09:50", PASO_GRILLA_MIN), true);
+  // Desalineado del paso (9:52 no es múltiplo de 5 desde las 9:00).
+  assert.equal(esIntervaloValido("09:00", "13:00", 90, "09:52", PASO_GRILLA_MIN), false);
   // No cabe: 11:45 + 90 min = 13:15 > cierre.
   assert.equal(esIntervaloValido("09:00", "13:00", 90, "11:45", PASO_GRILLA_MIN), false);
   // Antes de la apertura.
   assert.equal(esIntervaloValido("09:00", "13:00", 90, "08:45", PASO_GRILLA_MIN), false);
+});
+
+// Escenario del cliente: agregó 40 min a la lista de intervalos de la sede y
+// esperaba verlo en el dropdown "Intervalo" de /sesiones/nuevo.
+test("opcionesPaso incluye los intervalos configurados por la sede (ej. 40)", () => {
+  assert.deepEqual(opcionesPaso([15, 30, 40, 45, 60], 45), [15, 30, 40, 45, 60]);
+});
+
+test("opcionesPaso usa los pasos predefinidos si la sede no configuró lista", () => {
+  assert.deepEqual(opcionesPaso([], 30), [15, 30, 45, 60]);
+});
+
+test("opcionesPaso agrega el intervalo inicial si falta en la lista, ordenado", () => {
+  assert.deepEqual(opcionesPaso([60, 15], 45), [15, 45, 60]);
 });

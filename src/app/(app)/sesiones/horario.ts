@@ -39,10 +39,27 @@ export function sumarMinutos(hhmm: string, mins: number): string {
 
 export type Intervalo = { inicio: string; fin: string };
 
-/** Pasos de grilla disponibles en el calendario (minutos entre inicios). */
+/** Pasos de grilla predefinidos en el calendario (minutos entre inicios).
+ *  La sede puede configurar además cualquier múltiplo de 5 entre 5 y 120. */
 export const PASOS_GRILLA = [15, 30, 45, 60] as const;
-/** Paso más fino ofrecido: el servidor valida el alineamiento contra este. */
-export const PASO_GRILLA_MIN = 15;
+/** Paso más fino aceptado: el servidor valida el alineamiento contra este.
+ *  Es 5 porque el intervalo configurable es siempre múltiplo de 5. */
+export const PASO_GRILLA_MIN = 5;
+
+/**
+ * Opciones del selector "Intervalo" del calendario: la lista configurada por
+ * la sede (o los pasos predefinidos si está vacía) más el paso inicial de la
+ * sede por si no estuviera en su propia lista. Ordenadas y sin duplicados.
+ */
+export function opcionesPaso(
+  configurados: number[],
+  inicial: number,
+): number[] {
+  const base = configurados.length > 0 ? configurados : PASOS_GRILLA;
+  const pasos = new Set<number>(base);
+  if (inicial > 0) pasos.add(inicial);
+  return [...pasos].sort((a, b) => a - b);
+}
 
 /**
  * Genera las horas de inicio posibles dentro de [apertura, cierre): una cada

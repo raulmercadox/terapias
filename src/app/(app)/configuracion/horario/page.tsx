@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireUser } from "@/lib/session";
+import { requireUser, requireActiveSede } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { HorarioForm } from "./horario-form";
@@ -10,6 +10,7 @@ export default async function HorarioPage({
 }: PageProps<"/configuracion/horario">) {
   const user = await requireUser();
   if (user.rol !== "ADMINISTRADOR") notFound();
+  const sedeActivaId = await requireActiveSede(user);
 
   const { sede, ok } = await searchParams;
   const sedeParam = typeof sede === "string" ? sede : undefined;
@@ -24,6 +25,7 @@ export default async function HorarioPage({
       horaCierre: true,
       diasLaborales: true,
       intervaloCalendario: true,
+      intervalosCalendario: true,
     },
   });
 
@@ -39,8 +41,12 @@ export default async function HorarioPage({
     );
   }
 
+  // Sin ?sede= en la URL se abre la sede activa del usuario, no la primera
+  // alfabética (editar otra sede sin darse cuenta es un error fácil).
   const seleccionada =
-    sedes.find((s) => s.id === sedeParam) ?? sedes[0];
+    sedes.find((s) => s.id === sedeParam) ??
+    sedes.find((s) => s.id === sedeActivaId) ??
+    sedes[0];
 
   return (
     <div className="space-y-6">

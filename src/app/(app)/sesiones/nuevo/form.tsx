@@ -7,7 +7,7 @@ import { crearPaquete, type ActionState } from "../actions";
 import {
   DIA_NOMBRE,
   DIAS_ORDEN,
-  PASOS_GRILLA,
+  opcionesPaso,
   claveFecha,
   generarIntervalos,
 } from "../horario";
@@ -90,6 +90,7 @@ export default function NuevoPaqueteForm({
   horaCierre,
   diasLaborales,
   intervaloCalendario,
+  intervalosCalendario,
   feriados,
   citas,
 }: {
@@ -101,6 +102,7 @@ export default function NuevoPaqueteForm({
   horaCierre: string;
   diasLaborales: number[];
   intervaloCalendario: number;
+  intervalosCalendario: number[];
   feriados: string[];
   citas: CitaOcup[];
 }) {
@@ -119,9 +121,12 @@ export default function NuevoPaqueteForm({
   // Paso de la grilla (min entre horas de inicio ofrecidas). Es solo un modo
   // de vista: cambiarlo no borra las sesiones ya marcadas.
   const [paso, setPaso] = useState(
-    PASOS_GRILLA.includes(intervaloCalendario as (typeof PASOS_GRILLA)[number])
-      ? intervaloCalendario
-      : 30,
+    intervaloCalendario > 0 ? intervaloCalendario : 30,
+  );
+  // Opciones del selector "Intervalo" (lista configurada por la sede).
+  const pasosVista = useMemo(
+    () => opcionesPaso(intervalosCalendario, intervaloCalendario),
+    [intervalosCalendario, intervaloCalendario],
   );
 
   const programa = programas.find((p) => p.id === programaId);
@@ -397,7 +402,7 @@ export default function NuevoPaqueteForm({
                 onChange={(e) => setPaso(Number(e.target.value))}
                 className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-sky-500 focus:outline-none"
               >
-                {PASOS_GRILLA.map((p) => (
+                {pasosVista.map((p) => (
                   <option key={p} value={p}>
                     {p} min
                   </option>

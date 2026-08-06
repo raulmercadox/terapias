@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { guardarHorarioLaboral, type FormState } from "../actions";
 import { Button, Field, Input, Select } from "@/components/ui";
-import { DIA_NOMBRE, DIAS_ORDEN, PASOS_GRILLA } from "../../sesiones/horario";
+import { DIA_NOMBRE, DIAS_ORDEN } from "../../sesiones/horario";
 
 type SedeHorario = {
   id: string;
@@ -11,7 +11,18 @@ type SedeHorario = {
   horaCierre: string;
   diasLaborales: number[];
   intervaloCalendario: number;
+  intervalosCalendario: number[];
 };
+
+/** "15, 30, 45" → [15, 30, 45] (solo los valores numéricos válidos). */
+function parseIntervalos(s: string): number[] {
+  const nums = s
+    .split(/[,;\s]+/)
+    .filter(Boolean)
+    .map((v) => Number(v))
+    .filter((v) => Number.isInteger(v) && v > 0);
+  return Array.from(new Set(nums)).sort((a, b) => a - b);
+}
 
 export function HorarioForm({
   sede,
@@ -24,6 +35,17 @@ export function HorarioForm({
     guardarHorarioLaboral,
     undefined,
   );
+
+  // Lista de intervalos editable; el "inicial" se elige entre sus valores.
+  const [listaStr, setListaStr] = useState(
+    sede.intervalosCalendario.join(", "),
+  );
+  const [inicial, setInicial] = useState(String(sede.intervaloCalendario));
+  const opciones = useMemo(() => parseIntervalos(listaStr), [listaStr]);
+  // Si el inicial elegido ya no está en la lista, cae al primer valor.
+  const inicialEfectivo = opciones.includes(Number(inicial))
+    ? inicial
+    : String(opciones[0] ?? "");
 
   return (
     <form action={formAction} className="space-y-4">
@@ -48,21 +70,38 @@ export function HorarioForm({
         </Field>
       </div>
 
-      <Field label="Intervalo del calendario (minutos)">
+      <Field label="Intervalos del calendario (minutos)">
+        <Input
+          type="text"
+          name="intervalosCalendario"
+          value={listaStr}
+          onChange={(e) => setListaStr(e.target.value)}
+          placeholder="15, 30, 45, 60"
+          required
+          className="max-w-[20rem]"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Opciones que ofrecerá el selector “Intervalo” del calendario al
+          agendar un paquete. Sepáralas con comas; cada una debe ser un
+          múltiplo de 5 entre 5 y 120.
+        </p>
+      </Field>
+
+      <Field label="Intervalo inicial">
         <Select
           name="intervaloCalendario"
-          defaultValue={String(sede.intervaloCalendario)}
+          value={inicialEfectivo}
+          onChange={(e) => setInicial(e.target.value)}
           className="max-w-[12rem]"
         >
-          {PASOS_GRILLA.map((p) => (
+          {opciones.map((p) => (
             <option key={p} value={p}>
               {p} minutos
             </option>
           ))}
         </Select>
         <p className="mt-1 text-xs text-slate-400">
-          Cada cuántos minutos se ofrecen horas de inicio al agendar un paquete.
-          En el calendario se puede cambiar al vuelo; este es el valor inicial.
+          El intervalo seleccionado por defecto al abrir el calendario.
         </p>
       </Field>
 
