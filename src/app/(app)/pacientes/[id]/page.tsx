@@ -59,6 +59,7 @@ export default async function PacienteDetallePage({
           evaluador: { select: { nombres: true, apellidos: true } },
         },
       },
+      historiaClinica: { select: { id: true, fecha: true, updatedAt: true } },
     },
   });
 
@@ -140,6 +141,43 @@ export default async function PacienteDetallePage({
               <Dato label="Diagnóstico" value={paciente.diagnostico} />
               <Dato label="Observaciones" value={paciente.observaciones} />
             </dl>
+          </Card>
+
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Historia clínica
+                </h2>
+                {paciente.historiaClinica ? (
+                  <Link
+                    href={`/pacientes/${paciente.id}/historia`}
+                    className="mt-1 block text-sm font-medium text-sky-700 hover:underline"
+                  >
+                    Historia clínica del {fecha(paciente.historiaClinica.fecha)}
+                  </Link>
+                ) : (
+                  <p className="mt-1 text-sm text-slate-500">
+                    Este paciente aún no tiene historia clínica.
+                  </p>
+                )}
+              </div>
+              {paciente.historiaClinica ? (
+                <ButtonLink
+                  href={`/pacientes/${paciente.id}/historia`}
+                  variant="secondary"
+                >
+                  Ver historia
+                </ButtonLink>
+              ) : (
+                <ButtonLink
+                  href={`/pacientes/${paciente.id}/historia/nueva`}
+                  variant="secondary"
+                >
+                  Registrar historia
+                </ButtonLink>
+              )}
+            </div>
           </Card>
 
           <Card>
