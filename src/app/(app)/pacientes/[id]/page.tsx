@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede } from "@/lib/session";
+import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -8,6 +8,7 @@ import {
   Badge,
   ButtonLink,
 } from "@/components/ui";
+import Link from "next/link";
 import { nombreCompleto, edad, fecha } from "@/lib/utils";
 import { ApoderadosPanel, type ApoderadoVista } from "../apoderados-panel";
 import { EstadoToggle } from "../estado-toggle";
@@ -41,12 +42,22 @@ export default async function PacienteDetallePage({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  if (!puedeVerPagos(user)) notFound();
 
   const paciente = await prisma.paciente.findUnique({
     where: { id },
     include: {
       apoderados: {
         orderBy: [{ principal: "desc" }, { createdAt: "asc" }],
+      },
+      evaluaciones: {
+        orderBy: { fecha: "desc" },
+        select: {
+          id: true,
+          fecha: true,
+          programaRecomendado: true,
+          evaluador: { select: { nombres: true, apellidos: true } },
+        },
       },
     },
   });
@@ -129,6 +140,54 @@ export default async function PacienteDetallePage({
               <Dato label="Diagnóstico" value={paciente.diagnostico} />
               <Dato label="Observaciones" value={paciente.observaciones} />
             </dl>
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Evaluaciones
+              </h2>
+              <ButtonLink
+                href={`/pacientes/${paciente.id}/evaluaciones/nueva`}
+                variant="secondary"
+              >
+                Nueva evaluación
+              </ButtonLink>
+            </div>
+            {paciente.evaluaciones.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Este paciente aún no tiene fichas de evaluación.
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {paciente.evaluaciones.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                  >
+                    <div>
+                      <Link
+                        href={`/pacientes/${paciente.id}/evaluaciones/${ev.id}`}
+                        className="text-sm font-medium text-sky-700 hover:underline"
+                      >
+                        Evaluación del {fecha(ev.fecha)}
+                      </Link>
+                      {ev.evaluador && (
+                        <p className="text-xs text-slate-500">
+                          {`${ev.evaluador.nombres} ${ev.evaluador.apellidos}`.trim()}
+                        </p>
+                      )}
+                    </div>
+                    {ev.programaRecomendado && (
+                      <Badge color="sky">
+                        {PROGRAMA_LABEL[ev.programaRecomendado] ??
+                          ev.programaRecomendado}
+                      </Badge>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <ApoderadosPanel pacienteId={paciente.id} apoderados={apoderados} />
