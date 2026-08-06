@@ -80,3 +80,21 @@ export function assertSedeAccess(user: SessionUser, sedeId: string): void {
     throw new Error("No tiene acceso a esta sede.");
   }
 }
+
+/**
+ * El rol USUARIO solo opera Citas/Agenda y Sesiones: no ve pagos,
+ * montos, ni el módulo de pacientes. Coordinador y administrador sí.
+ */
+export function puedeVerPagos(user: SessionUser): boolean {
+  return user.rol !== "USUARIO";
+}
+
+/**
+ * Lanza si el rol no puede operar los módulos de gestión (pagos y
+ * pacientes). Úsalo en las server actions de esos módulos.
+ */
+export function assertRolGestion(user: SessionUser): void {
+  if (!puedeVerPagos(user)) {
+    throw new Error("No tiene permisos para esta operación.");
+  }
+}

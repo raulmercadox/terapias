@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireUser, requireActiveSede } from "@/lib/session";
+import { notFound } from "next/navigation";
+import { requireUser, requireActiveSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -21,6 +22,7 @@ export default async function PacientesPage({
   searchParams: Promise<{ q?: string; pagina?: string }>;
 }) {
   const user = await requireUser();
+  if (!puedeVerPagos(user)) notFound();
   const sedeId = await requireActiveSede(user);
   const { q, pagina: paginaParam } = await searchParams;
   const termino = (q ?? "").trim();

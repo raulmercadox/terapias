@@ -19,28 +19,41 @@ export default async function DashboardPage() {
   const hoyFin = new Date();
   hoyFin.setHours(23, 59, 59, 999);
 
+  // Los ingresos son información sensible: solo el administrador los ve.
+  const esAdmin = user.rol === "ADMINISTRADOR";
+  // El rol USUARIO no accede al módulo de pacientes.
+  const vePacientes = user.rol !== "USUARIO";
+
   const [pacientes, citasHoy, paquetesActivos, ingresosMes] = await Promise.all([
     prisma.paciente.count({ where: { sedeId, estado: "ACTIVO" } }),
     prisma.cita.count({
       where: { sedeId, fecha: { gte: hoyInicio, lte: hoyFin } },
     }),
     prisma.paquete.count({ where: { sedeId, estado: "ACTIVO" } }),
-    prisma.pago.aggregate({
-      where: { sedeId, fechaPago: { gte: inicioMes } },
-      _sum: { monto: true },
-    }),
+    esAdmin
+      ? prisma.pago.aggregate({
+          where: { sedeId, fechaPago: { gte: inicioMes } },
+          _sum: { monto: true },
+        })
+      : null,
   ]);
 
   const cards = [
-    { label: "Pacientes activos", value: pacientes, href: "/pacientes", icon: "🧒" },
+    ...(vePacientes
+      ? [{ label: "Pacientes activos", value: pacientes, href: "/pacientes", icon: "🧒" }]
+      : []),
     { label: "Citas de hoy", value: citasHoy, href: "/citas", icon: "📅" },
     { label: "Paquetes activos", value: paquetesActivos, href: "/sesiones", icon: "📋" },
-    {
-      label: "Ingresos del mes",
-      value: soles(ingresosMes._sum.monto ?? 0),
-      href: "/pagos",
-      icon: "💵",
-    },
+    ...(ingresosMes
+      ? [
+          {
+            label: "Ingresos del mes",
+            value: soles(ingresosMes._sum.monto ?? 0),
+            href: "/pagos",
+            icon: "💵",
+          },
+        ]
+      : []),
   ];
 
   return (

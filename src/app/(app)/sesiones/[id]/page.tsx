@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede } from "@/lib/session";
+import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -25,6 +25,8 @@ export default async function PaqueteDetallePage({
 }: PageProps<"/sesiones/[id]">) {
   const { id } = await params;
   const user = await requireUser();
+  // El rol USUARIO no ve montos (información de pagos).
+  const veMontos = puedeVerPagos(user);
 
   const paquete = await prisma.paquete.findUnique({
     where: { id },
@@ -108,7 +110,7 @@ export default async function PaqueteDetallePage({
               {usadas} / {paquete.totalSesiones}
             </Dato>
             <Dato label="Restantes">{restantes}</Dato>
-            <Dato label="Precio">{soles(paquete.precio)}</Dato>
+            {veMontos && <Dato label="Precio">{soles(paquete.precio)}</Dato>}
             <Dato label="Inicio">{fecha(paquete.fechaInicio)}</Dato>
             <Dato label="Fin estimado">{fecha(paquete.fechaFin)}</Dato>
           </div>
@@ -123,7 +125,7 @@ export default async function PaqueteDetallePage({
           <PaqueteAcciones
             paqueteId={paquete.id}
             estado={paquete.estado}
-            precio={Number(paquete.precio)}
+            precio={veMontos ? Number(paquete.precio) : null}
             observacion={paquete.observacion ?? ""}
             todasRegistradas={todasRegistradas}
           />

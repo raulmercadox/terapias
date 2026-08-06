@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireActiveSede } from "@/lib/session";
+import { notFound } from "next/navigation";
+import { requireUser, requireActiveSede, puedeVerPagos } from "@/lib/session";
 import {
   PageHeader,
   Card,
@@ -69,13 +70,28 @@ export default async function PagosPage({
     desde?: string;
     hasta?: string;
     q?: string;
+    pacienteId?: string;
     pagina?: string;
   }>;
 }) {
   const user = await requireUser();
+  if (!puedeVerPagos(user)) notFound();
   const sedeId = await requireActiveSede(user);
   const sp = await searchParams;
   const termino = (sp.q ?? "").trim();
+
+  // Filtro directo por paciente (llegando desde su ficha con ?pacienteId=).
+  const pacienteFiltrado = sp.pacienteId
+    ? await prisma.paciente.findFirst({
+        where: { id: sp.pacienteId, sedeId },
+        select: {
+          id: true,
+          nombres: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+        },
+      })
+    : null;
 
   // Filtro: si hay desde/hasta toma prioridad el rango; si no, por mes.
   const desdeParam = fechaParam(sp.desde);
@@ -93,6 +109,10 @@ export default async function PagosPage({
     if (desdeParam) fechaFilter.gte = desdeParam;
     if (hastaParam) fechaFilter.lt = hastaParam;
     etiquetaPeriodo = `Del ${sp.desde ?? "inicio"} al ${sp.hasta ?? "hoy"}`;
+  } else if (pacienteFiltrado && !sp.mes) {
+    // Desde la ficha del paciente se muestra todo su historial de pagos.
+    fechaFilter = {};
+    etiquetaPeriodo = "Todo el historial";
   } else {
     fechaFilter = { gte: rango!.desde, lt: rango!.hasta };
     etiquetaPeriodo = new Intl.DateTimeFormat("es-PE", {
@@ -102,18 +122,20 @@ export default async function PagosPage({
   }
 
   // Búsqueda por paciente (nombre, apellidos o DNI), insensible a mayúsculas.
-  const pacienteFilter = termino
-    ? {
-        paciente: {
-          OR: [
-            { nombres: { contains: termino, mode: "insensitive" as const } },
-            { apellidoPaterno: { contains: termino, mode: "insensitive" as const } },
-            { apellidoMaterno: { contains: termino, mode: "insensitive" as const } },
-            { dni: { contains: termino, mode: "insensitive" as const } },
-          ],
-        },
-      }
-    : {};
+  const pacienteFilter = pacienteFiltrado
+    ? { pacienteId: pacienteFiltrado.id }
+    : termino
+      ? {
+          paciente: {
+            OR: [
+              { nombres: { contains: termino, mode: "insensitive" as const } },
+              { apellidoPaterno: { contains: termino, mode: "insensitive" as const } },
+              { apellidoMaterno: { contains: termino, mode: "insensitive" as const } },
+              { dni: { contains: termino, mode: "insensitive" as const } },
+            ],
+          },
+        }
+      : {};
 
   const where = { sedeId, fechaPago: fechaFilter, ...pacienteFilter };
 
@@ -152,7 +174,8 @@ export default async function PagosPage({
 
   // Query params a conservar al cambiar de página.
   const paramsPaginacion: Record<string, string> = {};
-  if (termino) paramsPaginacion.q = termino;
+  if (pacienteFiltrado) paramsPaginacion.pacienteId = pacienteFiltrado.id;
+  else if (termino) paramsPaginacion.q = termino;
   if (sp.mes) paramsPaginacion.mes = sp.mes;
   if (sp.desde) paramsPaginacion.desde = sp.desde;
   if (sp.hasta) paramsPaginacion.hasta = sp.hasta;
@@ -169,26 +192,48 @@ export default async function PagosPage({
         }
       />
 
+      {pacienteFiltrado && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900">
+          <span>
+            Mostrando los pagos de{" "}
+            <span className="font-semibold">
+              {nombreCompleto(pacienteFiltrado)}
+            </span>
+          </span>
+          <Link
+            href="/pagos"
+            className="font-medium text-sky-600 hover:text-sky-700"
+          >
+            Quitar filtro
+          </Link>
+        </div>
+      )}
+
       <Card>
         <form method="get" className="flex flex-wrap items-end gap-3">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">
-              Paciente
-            </span>
-            <input
-              type="search"
-              name="q"
-              defaultValue={termino}
-              placeholder="Buscar por nombre o DNI…"
-              className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-            />
-          </label>
+          {pacienteFiltrado ? (
+            // Conserva el paciente al cambiar de mes o rango.
+            <input type="hidden" name="pacienteId" value={pacienteFiltrado.id} />
+          ) : (
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">
+                Paciente
+              </span>
+              <input
+                type="search"
+                name="q"
+                defaultValue={termino}
+                placeholder="Buscar por nombre o DNI…"
+                className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </label>
+          )}
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Mes</span>
             <input
               type="month"
               name="mes"
-              defaultValue={usaRango ? "" : mes}
+              defaultValue={usaRango || etiquetaPeriodo === "Todo el historial" ? "" : mes}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </label>
@@ -229,9 +274,11 @@ export default async function PagosPage({
       {pagos.length === 0 ? (
         <EmptyState
           message={
-            termino
-              ? `No se encontraron pagos de "${termino}" en este periodo. Prueba ampliar el rango de fechas.`
-              : "No hay pagos registrados en este periodo."
+            pacienteFiltrado
+              ? `${nombreCompleto(pacienteFiltrado)} no tiene pagos registrados en este periodo.`
+              : termino
+                ? `No se encontraron pagos de "${termino}" en este periodo. Prueba ampliar el rango de fechas.`
+                : "No hay pagos registrados en este periodo."
           }
         />
       ) : (

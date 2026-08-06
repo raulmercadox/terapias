@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser, canAccessSede } from "@/lib/session";
+import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
 import { normalizarTelefonoPe } from "../../../citas/helpers";
 import { PrintActions } from "./print-button";
@@ -37,6 +37,7 @@ export default async function ReciboPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  if (!puedeVerPagos(user)) notFound();
 
   const pago = await prisma.pago.findUnique({
     where: { id },

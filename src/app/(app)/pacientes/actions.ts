@@ -8,6 +8,7 @@ import {
   requireUser,
   requireActiveSede,
   assertSedeAccess,
+  assertRolGestion,
 } from "@/lib/session";
 
 /* ── Helpers ──────────────────────────────────────────── */
@@ -123,6 +124,7 @@ export async function crearPaciente(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
+  assertRolGestion(user);
   const sedeId = await requireActiveSede(user);
   assertSedeAccess(user, sedeId);
 
@@ -195,6 +197,7 @@ export async function actualizarPaciente(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
+  assertRolGestion(user);
 
   const existente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
@@ -223,6 +226,7 @@ export async function actualizarPaciente(
 
 export async function cambiarEstado(pacienteId: string, estado: string) {
   const user = await requireUser();
+  assertRolGestion(user);
 
   const existente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
@@ -276,6 +280,7 @@ export async function agregarApoderado(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
+  assertRolGestion(user);
   await assertPacienteAccess(user, pacienteId);
 
   const parsed = parseApoderadoForm(formData);
@@ -318,6 +323,7 @@ export async function actualizarApoderado(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
+  assertRolGestion(user);
 
   const apo = await prisma.apoderado.findUnique({
     where: { id: apoderadoId },
@@ -362,6 +368,7 @@ export async function actualizarApoderado(
 
 export async function eliminarApoderado(apoderadoId: string) {
   const user = await requireUser();
+  assertRolGestion(user);
 
   const apo = await prisma.apoderado.findUnique({
     where: { id: apoderadoId },

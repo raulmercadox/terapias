@@ -5,6 +5,14 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string; icon: string };
+type Rol = "ADMINISTRADOR" | "COORDINADOR" | "USUARIO";
+
+// El rol USUARIO solo ve Inicio, Citas/Agenda y Sesiones.
+const NAV_USUARIO: NavItem[] = [
+  { href: "/", label: "Inicio", icon: "🏠" },
+  { href: "/citas", label: "Citas / Agenda", icon: "📅" },
+  { href: "/sesiones", label: "Sesiones", icon: "📋" },
+];
 
 const NAV: NavItem[] = [
   { href: "/", label: "Inicio", icon: "🏠" },
@@ -18,9 +26,14 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/configuracion", label: "Configuración", icon: "⚙️" },
 ];
 
-export function Sidebar({ isAdmin }: { isAdmin: boolean }) {
+export function Sidebar({ rol }: { rol: Rol }) {
   const pathname = usePathname();
-  const items = isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
+  const items =
+    rol === "USUARIO"
+      ? NAV_USUARIO
+      : rol === "ADMINISTRADOR"
+        ? [...NAV, ...ADMIN_NAV]
+        : NAV;
 
   return (
     <nav className="flex flex-col gap-1 p-3">

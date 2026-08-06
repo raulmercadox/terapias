@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <p className="text-xs text-slate-400">Terapias</p>
           </div>
         </div>
-        <Sidebar isAdmin={user.rol === "ADMINISTRADOR"} />
+        <Sidebar rol={user.rol} />
       </aside>
 
       {/* Main */}

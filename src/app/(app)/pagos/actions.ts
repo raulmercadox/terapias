@@ -4,7 +4,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireActiveSede, assertSedeAccess } from "@/lib/session";
+import {
+  requireUser,
+  requireActiveSede,
+  assertSedeAccess,
+  assertRolGestion,
+} from "@/lib/session";
 
 const CONCEPTOS = [
   "MATRICULA",
@@ -73,6 +78,7 @@ export async function registrarPago(
   formData: FormData,
 ): Promise<RegistrarPagoState> {
   const user = await requireUser();
+  assertRolGestion(user);
   const sedeId = await requireActiveSede(user);
   assertSedeAccess(user, sedeId);
 

@@ -23,7 +23,8 @@ export default function PaqueteAcciones({
 }: {
   paqueteId: string;
   estado: EstadoPaquete;
-  precio: number;
+  /** null cuando el rol no puede ver montos: oculta la edición de datos. */
+  precio: number | null;
   observacion: string;
   todasRegistradas: boolean;
 }) {
@@ -52,8 +53,8 @@ export default function PaqueteAcciones({
     <div className="space-y-4">
       <p className="text-sm font-semibold text-slate-900">Acciones</p>
 
-      {/* Editar precio / observación */}
-      {!editar ? (
+      {/* Editar precio / observación (solo roles que ven montos) */}
+      {precio === null ? null : !editar ? (
         <Button
           type="button"
           variant="secondary"

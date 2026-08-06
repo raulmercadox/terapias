@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireActiveSede } from "@/lib/session";
+import { notFound } from "next/navigation";
+import { requireUser, requireActiveSede, puedeVerPagos } from "@/lib/session";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { nombreCompleto, fecha, soles } from "@/lib/utils";
 import { PagoForm } from "./pago-form";
@@ -14,6 +15,7 @@ function hoyISO(): string {
 
 export default async function NuevoPagoPage() {
   const user = await requireUser();
+  if (!puedeVerPagos(user)) notFound();
   const sedeId = await requireActiveSede(user);
 
   const [pacientesRaw, paquetesRaw, pagosPorPaquete] = await Promise.all([
