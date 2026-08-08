@@ -49,7 +49,13 @@ App en http://localhost:3000
 - `npx prisma migrate dev --name <cambio>` — nueva migración tras editar el esquema.
 - `npm run build && npm start` — build y ejecución de producción.
 
-## Despliegue (VPS CentOS, resumen)
+## Despliegue
+
+Para desplegar cambios en el servidor ya montado: `./deploy/deploy.sh --dry-run`
+para ver qué cambiaría, y `./deploy/deploy.sh` para aplicarlo. Detalles,
+rollback y notas del servidor en [`deploy/README.md`](deploy/README.md).
+
+### Montar el servidor desde cero (VPS CentOS, resumen)
 1. Instalar Node LTS y PostgreSQL (o usar contenedor).
 2. Definir `.env` con `DATABASE_URL` y un `AUTH_SECRET` fuerte (`openssl rand -base64 32`).
 3. `npm ci && npx prisma migrate deploy && npm run build`.
