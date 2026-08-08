@@ -12,13 +12,14 @@ const SEXO_LABEL: Record<string, string> = {
   F: "Femenino",
 };
 
+/** Las etiquetas replican las del formulario de registro (ver historia-form.tsx). */
+const ETIQUETA = "mb-1 block text-sm font-medium text-slate-700";
+
 function Dato({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
-      </dt>
-      <dd className="mt-0.5 text-sm text-slate-800">{value || "—"}</dd>
+      <dt className={ETIQUETA}>{label}</dt>
+      <dd className="text-sm text-slate-800">{value || "—"}</dd>
     </div>
   );
 }
@@ -26,10 +27,8 @@ function Dato({ label, value }: { label: string; value: ReactNode }) {
 function DatoLargo({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
-      </dt>
-      <dd className="mt-0.5 whitespace-pre-line text-sm text-slate-800">
+      <dt className={ETIQUETA}>{label}</dt>
+      <dd className="whitespace-pre-line text-sm text-slate-800">
         {value || "—"}
       </dd>
     </div>
@@ -133,7 +132,7 @@ export default async function HistoriaClinicaPage({
             <Dato label="Padre o apoderado" value={historia.padreApoderado} />
             <Dato label="Dirección" value={paciente.direccion} />
             <Dato label="Teléfono" value={paciente.telefono} />
-            <Dato label="Fecha" value={fecha(historia.fecha)} />
+            <Dato label="Fecha de la historia" value={fecha(historia.fecha)} />
           </dl>
         </Seccion>
 
@@ -209,7 +208,7 @@ export default async function HistoriaClinicaPage({
           </dl>
           <dl className="mt-4 grid gap-4">
             <DatoLargo
-              label="Evolución y mejoría desde que apareció por primera vez"
+              label="¿Cómo ha evolucionado desde que apareció por primera vez? ¿Ha notado alguna mejoría?"
               value={historia.evolucionMejoria}
             />
             <DatoLargo
@@ -217,7 +216,7 @@ export default async function HistoriaClinicaPage({
               value={historia.examenesRealizados}
             />
             <DatoLargo
-              label="Tratamiento – terapias recibidas (tiempo, instituciones, evolución)"
+              label="Tratamiento – terapias recibidas: ¿cuánto tiempo?, ¿en qué instituciones?, evolución del tratamiento"
               value={historia.tratamientosRecibidos}
             />
           </dl>
@@ -261,7 +260,7 @@ export default async function HistoriaClinicaPage({
 
         <Seccion titulo="IV. Opinión y actitud del padre hacia el hijo">
           <div className="mb-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+            <p className="mb-2 text-sm font-medium text-slate-600">
               Reacción de los padres
             </p>
             {reacciones.length === 0 ? (
@@ -282,16 +281,19 @@ export default async function HistoriaClinicaPage({
               value={historia.reaccionDetalle}
             />
             <DatoLargo
-              label="Creencias sobre el problema, sentimientos de culpa"
+              label="Creencias sobre el problema, sentimientos de culpa, etc."
               value={historia.creencias}
             />
-            <DatoLargo label="Cambios en la crianza" value={historia.cambiosCrianza} />
             <DatoLargo
-              label="Uso del castigo (cómo, frecuencia, reacción del niño)"
+              label="Cambios: aislarlo o dejarlo con el grupo, exigirle un comportamiento similar, mayor atención, sobreprotección…"
+              value={historia.cambiosCrianza}
+            />
+            <DatoLargo
+              label="Uso del castigo: ¿cómo, con qué frecuencia? Reacción del niño"
               value={historia.usoCastigo}
             />
             <DatoLargo
-              label="Comportamiento con padres, hermanos, amigos. Apego"
+              label="Comportamiento del niño con los padres, hermanos, amigos, otros. Apego del niño, ¿hacia quién?"
               value={historia.comportamientoApego}
             />
           </dl>
@@ -300,7 +302,7 @@ export default async function HistoriaClinicaPage({
         <Seccion titulo="V. Antecedentes familiares">
           <dl className="grid gap-4">
             <DatoLargo
-              label="Enfermedad/condición en la familia"
+              label="¿Enfermedad/condición en la familia? (SI/NO, especificar)"
               value={historia.enfermedadesFamiliares}
             />
             <DatoLargo
