@@ -14,8 +14,25 @@ export const IPL_LABEL: Record<string, string> = {
   L: "Logrado",
 };
 
+export const MODALIDADES_LENGUAJE = ["VERBAL", "NO_VERBAL"] as const;
+export type ModalidadLenguaje = (typeof MODALIDADES_LENGUAJE)[number];
+
+export const MODALIDAD_LABEL: Record<ModalidadLenguaje, string> = {
+  VERBAL: "Verbal",
+  NO_VERBAL: "No verbal",
+};
+
 export type ItemFicha = { id: string; label: string };
-export type GrupoFicha = { titulo: string | null; items: ItemFicha[] };
+export type GrupoFicha = {
+  titulo: string | null;
+  items: ItemFicha[];
+  /**
+   * Solo área de lenguaje: el grupo aplica únicamente a esta modalidad. Al
+   * mostrar la ficha se ocultan los grupos de la modalidad no elegida (ver
+   * `gruposVisibles`).
+   */
+  modalidad?: ModalidadLenguaje;
+};
 export type AreaFicha = {
   id: string;
   titulo: string;
@@ -94,6 +111,7 @@ export const AREAS_FICHA: AreaFicha[] = [
     grupos: [
       {
         titulo: "Verbal",
+        modalidad: "VERBAL",
         items: [
           { id: "leng_onomatopeyicos", label: "Emite sonidos onomatopéyicos" },
           { id: "leng_ecolalia", label: "Ecolalia" },
@@ -106,6 +124,7 @@ export const AREAS_FICHA: AreaFicha[] = [
       },
       {
         titulo: "No verbal",
+        modalidad: "NO_VERBAL",
         items: [
           { id: "leng_imitacion", label: "Muestra imitación" },
           { id: "leng_comprende_indicaciones", label: "Comprende indicaciones" },
@@ -197,6 +216,26 @@ export const AREAS_FICHA: AreaFicha[] = [
     ],
   },
 ];
+
+/**
+ * Si un grupo corresponde a la modalidad elegida. Los grupos sin `modalidad`
+ * aplican siempre; los que la tienen, solo si coincide. Si aún no se eligió
+ * modalidad (null) aplican todos, para poder llenar cualquiera de los dos.
+ */
+export function grupoAplica(
+  grupo: GrupoFicha,
+  modalidad: string | null | undefined,
+): boolean {
+  return !grupo.modalidad || !modalidad || grupo.modalidad === modalidad;
+}
+
+/** Grupos de un área que corresponden a la modalidad elegida. */
+export function gruposVisibles(
+  area: AreaFicha,
+  modalidad: string | null | undefined,
+): GrupoFicha[] {
+  return area.grupos.filter((g) => grupoAplica(g, modalidad));
+}
 
 /** Dominio de valores válidos por ítem: { itemId: ["I","P","L"] | ["SI","NO"] }. */
 const DOMINIO: Record<string, readonly string[]> = Object.fromEntries(

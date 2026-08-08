@@ -1,6 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AREAS_FICHA, normalizarResultados } from "./ficha";
+import { AREAS_FICHA, gruposVisibles, normalizarResultados } from "./ficha";
+
+const LENGUAJE = AREAS_FICHA.find((a) => a.id === "lenguaje")!;
+const CONDUCTUAL = AREAS_FICHA.find((a) => a.id === "conductual")!;
+
+test("gruposVisibles filtra el área de lenguaje según la modalidad", () => {
+  assert.deepEqual(
+    gruposVisibles(LENGUAJE, "NO_VERBAL").map((g) => g.titulo),
+    ["No verbal"],
+  );
+  assert.deepEqual(
+    gruposVisibles(LENGUAJE, "VERBAL").map((g) => g.titulo),
+    ["Verbal"],
+  );
+});
+
+test("gruposVisibles muestra todo si no hay modalidad o el área no la usa", () => {
+  assert.deepEqual(gruposVisibles(LENGUAJE, null), LENGUAJE.grupos);
+  assert.deepEqual(gruposVisibles(LENGUAJE, ""), LENGUAJE.grupos);
+  assert.deepEqual(gruposVisibles(CONDUCTUAL, "VERBAL"), CONDUCTUAL.grupos);
+});
 
 test("el catálogo de la ficha no tiene ids de ítem duplicados", () => {
   const ids = AREAS_FICHA.flatMap((a) =>

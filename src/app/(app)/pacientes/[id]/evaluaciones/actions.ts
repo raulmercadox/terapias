@@ -11,6 +11,8 @@ import {
 } from "@/lib/session";
 import {
   AREAS_FICHA,
+  MODALIDADES_LENGUAJE,
+  grupoAplica,
   normalizarResultados,
   type Resultados,
 } from "./ficha";
@@ -28,7 +30,7 @@ function opt(value: FormDataEntryValue | null): string | undefined {
 }
 
 const PROGRAMAS = ["ESCOLAR", "INTERDIARIO", "TERAPIAS"] as const;
-const MODALIDADES = ["VERBAL", "NO_VERBAL"] as const;
+const MODALIDADES = MODALIDADES_LENGUAJE;
 
 const evaluacionSchema = z.object({
   fecha: z.string().min(1, "La fecha es obligatoria."),
@@ -107,11 +109,19 @@ function parseEvaluacionForm(formData: FormData) {
  * Lee del FormData los checklists de áreas: cada ítem del catálogo viene como
  * radio `res_<itemId>` (valor I/P/L o SI/NO; "" = sin evaluar) y, en las áreas
  * con observación, un texto `obs_<itemId>`.
+ *
+ * Los grupos que no corresponden a la modalidad de lenguaje elegida se ignoran:
+ * el formulario los oculta pero sigue enviando sus inputs, y guardarlos dejaría
+ * en la ficha resultados de una modalidad que no se está evaluando.
  */
-function parseResultados(formData: FormData): Resultados {
+function parseResultados(
+  formData: FormData,
+  modalidadLenguaje: string | undefined,
+): Resultados {
   const crudo: Record<string, { valor?: string; obs?: string }> = {};
   for (const area of AREAS_FICHA) {
     for (const grupo of area.grupos) {
+      if (!grupoAplica(grupo, modalidadLenguaje)) continue;
       for (const item of grupo.items) {
         crudo[item.id] = {
           valor: opt(formData.get(`res_${item.id}`)),
@@ -199,7 +209,7 @@ export async function crearEvaluacion(
   const errorEvaluador = await validarEvaluador(d.evaluadorId, paciente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };
 
-  const resultados = parseResultados(formData);
+  const resultados = parseResultados(formData, d.modalidadLenguaje);
 
   const evaluacion = await prisma.evaluacion.create({
     data: {
@@ -244,7 +254,7 @@ export async function actualizarEvaluacion(
   const errorEvaluador = await validarEvaluador(d.evaluadorId, existente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };
 
-  const resultados = parseResultados(formData);
+  const resultados = parseResultados(formData, d.modalidadLenguaje);
 
   await prisma.evaluacion.update({
     where: { id: evaluacionId },

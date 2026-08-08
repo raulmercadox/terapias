@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   Button,
   ButtonLink,
@@ -11,7 +11,13 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { FormState } from "./actions";
-import { AREAS_FICHA, IPL_LABEL, type Resultados } from "./ficha";
+import {
+  AREAS_FICHA,
+  IPL_LABEL,
+  MODALIDAD_LABEL,
+  grupoAplica,
+  type Resultados,
+} from "./ficha";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 
@@ -122,6 +128,8 @@ export function EvaluacionForm({
   );
   const v = inicial ?? {};
   const res = v.resultados ?? {};
+  // Controlada porque de ella depende qué grupos del área de lenguaje se ven.
+  const [modalidad, setModalidad] = useState(v.modalidadLenguaje ?? "");
 
   return (
     <form action={formAction} className="space-y-6">
@@ -267,8 +275,8 @@ export function EvaluacionForm({
               {(
                 [
                   ["", "—"],
-                  ["VERBAL", "Verbal"],
-                  ["NO_VERBAL", "No verbal"],
+                  ["VERBAL", MODALIDAD_LABEL.VERBAL],
+                  ["NO_VERBAL", MODALIDAD_LABEL.NO_VERBAL],
                 ] as const
               ).map(([val, label]) => (
                 <label key={val} className="flex items-center gap-1">
@@ -276,7 +284,8 @@ export function EvaluacionForm({
                     type="radio"
                     name="modalidadLenguaje"
                     value={val}
-                    defaultChecked={(v.modalidadLenguaje ?? "") === val}
+                    checked={modalidad === val}
+                    onChange={() => setModalidad(val)}
                   />
                   {label}
                 </label>
@@ -285,7 +294,10 @@ export function EvaluacionForm({
           )}
           <div className="space-y-4">
             {area.grupos.map((grupo, gi) => (
-              <div key={gi}>
+              // Se oculta con CSS en vez de desmontarlo: así los inputs siguen
+              // en el DOM y no se pierde lo escrito si se alterna la modalidad.
+              // El descarte definitivo lo hace el server al guardar.
+              <div key={gi} hidden={!grupoAplica(grupo, modalidad)}>
                 {grupo.titulo && (
                   <h3 className="mb-2 text-sm font-medium text-slate-600">
                     {grupo.titulo}

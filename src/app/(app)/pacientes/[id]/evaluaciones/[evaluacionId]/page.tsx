@@ -7,7 +7,10 @@ import { nombreCompleto, edad, fecha } from "@/lib/utils";
 import {
   AREAS_FICHA,
   IPL_LABEL,
+  MODALIDAD_LABEL,
+  gruposVisibles,
   normalizarResultados,
+  type ModalidadLenguaje,
 } from "../ficha";
 import { EliminarEvaluacionBoton } from "./eliminar-boton";
 
@@ -196,13 +199,16 @@ export default async function EvaluacionDetallePage({
             {area.id === "lenguaje" && evaluacion.modalidadLenguaje && (
               <p className="mb-3 text-sm text-slate-700">
                 <span className="font-medium">Modalidad:</span>{" "}
-                {evaluacion.modalidadLenguaje === "VERBAL"
-                  ? "Verbal"
-                  : "No verbal"}
+                {MODALIDAD_LABEL[
+                  evaluacion.modalidadLenguaje as ModalidadLenguaje
+                ] ?? evaluacion.modalidadLenguaje}
               </p>
             )}
             <div className="space-y-4">
-              {area.grupos.map((grupo, gi) => (
+              {gruposVisibles(
+                area,
+                area.id === "lenguaje" ? evaluacion.modalidadLenguaje : null,
+              ).map((grupo, gi) => (
                 <div key={gi}>
                   {grupo.titulo && (
                     <h3 className="mb-2 text-sm font-medium text-slate-600">
