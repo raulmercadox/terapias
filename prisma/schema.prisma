@@ -90,35 +90,36 @@ enum MetodoPago {
 // ─────────────────────────────────────────────────────────────
 
 model Sede {
-  id        String   @id @default(cuid())
-  nombre    String   @unique
-  direccion String?
-  telefono  String?
-  activo    Boolean  @default(true)
+  id                   String   @id @default(cuid())
+  nombre               String   @unique
+  direccion            String?
+  telefono             String?
+  activo               Boolean  @default(true)
   // Horario laboral (atención): rango de atención y días hábiles.
-  horaApertura  String @default("09:00") // "HH:mm"
-  horaCierre    String @default("13:00") // "HH:mm"
-  diasLaborales Int[]  @default([1, 2, 3, 4, 5, 6]) // getDay(): 0=Dom..6=Sáb
+  horaApertura         String   @default("09:00") // "HH:mm"
+  horaCierre           String   @default("13:00") // "HH:mm"
+  diasLaborales        Int[]    @default([1, 2, 3, 4, 5, 6]) // getDay(): 0=Dom..6=Sáb
   // Paso predeterminado de la grilla del calendario al agendar (minutos entre
   // horas de inicio ofrecidas). En el calendario se puede cambiar al vuelo;
   // esto solo define el valor inicial. Debe estar en intervalosCalendario.
-  intervaloCalendario Int @default(30)
+  intervaloCalendario  Int      @default(30)
   // Opciones de paso que ofrece el selector "Intervalo" del calendario.
   // Editable por sede en Configuración › Horario (múltiplos de 5, 5–120).
-  intervalosCalendario Int[] @default([15, 30, 45, 60])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  intervalosCalendario Int[]    @default([15, 30, 45, 60])
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  usuarios   UserSede[]
-  terapeutas Terapeuta[]
-  pacientes  Paciente[]
-  paquetes   Paquete[]
-  citas      Cita[]
-  pagos      Pago[]
+  usuarios          UserSede[]
+  terapeutas        Terapeuta[]
+  pacientes         Paciente[]
+  paquetes          Paquete[]
+  citas             Cita[]
+  pagos             Pago[]
   programas         ProgramaTerapia[]
   feriados          Feriado[]
   evaluaciones      Evaluacion[]
   historiasClinicas HistoriaClinica[]
+  informesAvance    InformeAvance[]
 }
 
 model User {
@@ -156,9 +157,10 @@ model Terapeuta {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sede         Sede         @relation(fields: [sedeId], references: [id])
-  citas        Cita[]
-  evaluaciones Evaluacion[]
+  sede           Sede            @relation(fields: [sedeId], references: [id])
+  citas          Cita[]
+  evaluaciones   Evaluacion[]
+  informesAvance InformeAvance[]
 
   @@index([sedeId])
 }
@@ -195,6 +197,7 @@ model Paciente {
   pagos           Pago[]
   evaluaciones    Evaluacion[]
   historiaClinica HistoriaClinica?
+  informesAvance  InformeAvance[]
 
   @@index([sedeId])
   @@index([dni])
@@ -340,6 +343,36 @@ model HistoriaClinica {
   @@index([sedeId])
 }
 
+// Informe de Avance: varios por paciente (a diferencia de la Historia Clínica).
+// Réplica del formato impreso del centro: secciones con ítems calificados en
+// EI / EP / LE, más recomendaciones libres al final.
+model InformeAvance {
+  id          String   @id @default(cuid())
+  sedeId      String
+  pacienteId  String
+  evaluadorId String?
+  fecha       DateTime @default(now())
+
+  // Secciones con sus ítems. A diferencia de Evaluacion.resultados —que solo
+  // guarda valores contra el catálogo fijo de ficha.ts— aquí viaja también el
+  // texto de cada ítem, porque es editable en cada informe:
+  // [{ id, titulo, items: [{ id, label, valor?: "EI"|"EP"|"LE" }] }]
+  // La plantilla inicial vive en pacientes/[id]/informes/informe.ts
+  secciones Json @default("[]")
+
+  recomendaciones String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sede      Sede       @relation(fields: [sedeId], references: [id])
+  paciente  Paciente   @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  evaluador Terapeuta? @relation(fields: [evaluadorId], references: [id])
+
+  @@index([pacienteId, fecha])
+  @@index([sedeId])
+}
+
 model Apoderado {
   id         String   @id @default(cuid())
   pacienteId String
@@ -391,28 +424,28 @@ model Paquete {
 }
 
 model Cita {
-  id              String     @id @default(cuid())
-  sedeId          String
-  pacienteId      String
-  terapeutaId     String?
-  paqueteId       String?
-  numeroSesion    Int?
-  fecha           DateTime
-  horaInicio      String // "09:00"
-  horaFin         String // "09:45"
-  tipo            TipoCita   @default(SESION)
-  estado          EstadoCita @default(AGENDADA)
-  asistencia      Asistencia @default(PENDIENTE)
-  terapiaRealizada String?
-  observacion     String?
-  recordatorioEnviado Boolean @default(false)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                  String     @id @default(cuid())
+  sedeId              String
+  pacienteId          String
+  terapeutaId         String?
+  paqueteId           String?
+  numeroSesion        Int?
+  fecha               DateTime
+  horaInicio          String // "09:00"
+  horaFin             String // "09:45"
+  tipo                TipoCita   @default(SESION)
+  estado              EstadoCita @default(AGENDADA)
+  asistencia          Asistencia @default(PENDIENTE)
+  terapiaRealizada    String?
+  observacion         String?
+  recordatorioEnviado Boolean    @default(false)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
-  sede      Sede       @relation(fields: [sedeId], references: [id])
-  paciente  Paciente   @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
-  terapeuta Terapeuta? @relation(fields: [terapeutaId], references: [id])
-  paquete   Paquete?   @relation(fields: [paqueteId], references: [id], onDelete: SetNull)
+  sede          Sede                @relation(fields: [sedeId], references: [id])
+  paciente      Paciente            @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  terapeuta     Terapeuta?          @relation(fields: [terapeutaId], references: [id])
+  paquete       Paquete?            @relation(fields: [paqueteId], references: [id], onDelete: SetNull)
   observaciones ObservacionSesion[]
 
   @@index([sedeId, fecha])
@@ -442,16 +475,16 @@ model ObservacionSesion {
 // Programa de terapia configurable por sede. Define la duración de sus sesiones.
 // (Independiente del enum Programa usado en Paciente.)
 model ProgramaTerapia {
-  id          String   @id @default(cuid())
-  sedeId      String
-  nombre      String
-  duracionMin Int      @default(45)
+  id           String   @id @default(cuid())
+  sedeId       String
+  nombre       String
+  duracionMin  Int      @default(45)
   // Cupo máximo de pacientes por franja (terapeuta + día + hora).
   // 1 = terapia individual; >1 = terapia grupal.
-  maxPacientes Int     @default(1)
-  activo      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  maxPacientes Int      @default(1)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   sede     Sede      @relation(fields: [sedeId], references: [id])
   paquetes Paquete[]

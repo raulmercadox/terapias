@@ -12,6 +12,7 @@ import Link from "next/link";
 import { nombreCompleto, edad, fecha } from "@/lib/utils";
 import { ApoderadosPanel, type ApoderadoVista } from "../apoderados-panel";
 import { EstadoToggle } from "../estado-toggle";
+import { normalizarSecciones, resumenAvance } from "./informes/informe";
 
 const PROGRAMA_LABEL: Record<string, string> = {
   ESCOLAR: "Escolar",
@@ -60,6 +61,15 @@ export default async function PacienteDetallePage({
         },
       },
       historiaClinica: { select: { id: true, fecha: true, updatedAt: true } },
+      informesAvance: {
+        orderBy: { fecha: "desc" },
+        select: {
+          id: true,
+          fecha: true,
+          secciones: true,
+          evaluador: { select: { nombres: true, apellidos: true } },
+        },
+      },
     },
   });
 
@@ -224,6 +234,56 @@ export default async function PacienteDetallePage({
                     )}
                   </li>
                 ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Informes de avance
+              </h2>
+              <ButtonLink
+                href={`/pacientes/${paciente.id}/informes/nuevo`}
+                variant="secondary"
+              >
+                Nuevo informe
+              </ButtonLink>
+            </div>
+            {paciente.informesAvance.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Este paciente aún no tiene informes de avance.
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {paciente.informesAvance.map((inf) => {
+                  const { calificados, total } = resumenAvance(
+                    normalizarSecciones(inf.secciones),
+                  );
+                  return (
+                    <li
+                      key={inf.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                    >
+                      <div>
+                        <Link
+                          href={`/pacientes/${paciente.id}/informes/${inf.id}`}
+                          className="text-sm font-medium text-sky-700 hover:underline"
+                        >
+                          Informe del {fecha(inf.fecha)}
+                        </Link>
+                        {inf.evaluador && (
+                          <p className="text-xs text-slate-500">
+                            {`${inf.evaluador.nombres} ${inf.evaluador.apellidos}`.trim()}
+                          </p>
+                        )}
+                      </div>
+                      <Badge color={calificados === total ? "green" : "slate"}>
+                        {calificados}/{total} calificados
+                      </Badge>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>

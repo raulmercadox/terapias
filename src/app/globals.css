@@ -18,7 +18,9 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
-/* Estilos para impresión de recibos: oculta todo salvo .print-area */
+/* Impresión de recibos e informes de avance: oculta todo salvo .print-area.
+   El .print-area se posiciona en absolute/top:0 para que el encabezado oculto
+   —invisible pero con espacio reservado— no empuje el documento hacia abajo. */
 @media print {
   body * {
     visibility: hidden;
