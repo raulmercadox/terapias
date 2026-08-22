@@ -180,6 +180,23 @@ export function seccionesIniciales(): SeccionInforme[] {
   }));
 }
 
+/**
+ * Copia de unas secciones con las calificaciones en blanco.
+ *
+ * Sirve para precargar un informe nuevo con el anterior del paciente: conserva
+ * los ítems que se agregaron a mano —y sobre todo sus ids, sin los cuales no
+ * hay serie que comparar entre informes (ver progreso/progreso.ts)— sin
+ * arrastrar los valores del informe pasado.
+ */
+export function seccionesSinValores(
+  secciones: SeccionInforme[],
+): SeccionInforme[] {
+  return secciones.map((s) => ({
+    ...s,
+    items: s.items.map((i) => ({ ...i, valor: null })),
+  }));
+}
+
 function esValor(v: unknown): v is ValorInforme {
   return (
     typeof v === "string" && (VALORES_INFORME as readonly string[]).includes(v)

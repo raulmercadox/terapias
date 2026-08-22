@@ -5,6 +5,7 @@ import {
   normalizarSecciones,
   resumenAvance,
   seccionesIniciales,
+  seccionesSinValores,
 } from "./informe";
 
 test("seccionesIniciales copia la plantilla sin compartir referencias", () => {
@@ -119,4 +120,29 @@ test("resumenAvance con la plantilla nueva: nada calificado", () => {
   const { calificados, total } = resumenAvance(seccionesIniciales());
   assert.equal(calificados, 0);
   assert.equal(total, 28, "4 + 10 + 8 + 6 ítems del formato impreso");
+});
+
+test("seccionesSinValores conserva ítems y textos, y borra las calificaciones", () => {
+  const anterior = [
+    {
+      id: "lenguaje",
+      titulo: "ÁREA DE LENGUAJE",
+      items: [
+        { id: "len_comprensivo", label: "Texto editado", valor: "LE" as const },
+        { id: "nuevo_abc_0", label: "Agregado a mano", valor: "EP" as const },
+      ],
+    },
+  ];
+
+  const s = seccionesSinValores(anterior);
+
+  assert.deepEqual(
+    s[0].items.map((i) => [i.id, i.label, i.valor]),
+    [
+      ["len_comprensivo", "Texto editado", null],
+      ["nuevo_abc_0", "Agregado a mano", null],
+    ],
+  );
+  // No comparte referencias con el informe de origen.
+  assert.equal(anterior[0].items[0].valor, "LE");
 });
