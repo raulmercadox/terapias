@@ -243,12 +243,22 @@ export default async function PacienteDetallePage({
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                 Informes de avance
               </h2>
-              <ButtonLink
-                href={`/pacientes/${paciente.id}/informes/nuevo`}
-                variant="secondary"
-              >
-                Nuevo informe
-              </ButtonLink>
+              <div className="flex gap-2">
+                {paciente.informesAvance.length > 0 && (
+                  <ButtonLink
+                    href={`/pacientes/${paciente.id}/progreso`}
+                    variant="secondary"
+                  >
+                    Ver progreso
+                  </ButtonLink>
+                )}
+                <ButtonLink
+                  href={`/pacientes/${paciente.id}/informes/nuevo`}
+                  variant="secondary"
+                >
+                  Nuevo informe
+                </ButtonLink>
+              </div>
             </div>
             {paciente.informesAvance.length === 0 ? (
               <p className="text-sm text-slate-500">
