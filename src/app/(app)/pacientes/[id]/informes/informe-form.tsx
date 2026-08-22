@@ -131,9 +131,19 @@ function CeldasValor({
 
   return (
     <>
-      <input type="hidden" name={`item_valor_${seccionId}`} value={valor} />
-      {VALORES_INFORME.map((v) => (
+      {VALORES_INFORME.map((v, i) => (
         <td key={v} className="py-1 text-center">
+          {/* El hidden va dentro de la celda: como hijo directo de <tr> es HTML
+              inválido y el navegador lo saca de la tabla al parsear, lo que
+              rompe la hidratación. Dentro del <td> conserva su posición en el
+              formulario, que es lo que alinea los valores con item_id_*. */}
+          {i === 0 && (
+            <input
+              type="hidden"
+              name={`item_valor_${seccionId}`}
+              value={valor}
+            />
+          )}
           <input
             type="radio"
             checked={valor === v}
