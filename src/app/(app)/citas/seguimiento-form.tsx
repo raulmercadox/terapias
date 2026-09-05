@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { Button, Field, Textarea } from "@/components/ui";
 import { fechaHora } from "@/lib/utils";
 import { registrarSeguimiento, type FormState } from "./actions";
@@ -21,10 +22,11 @@ export function SeguimientoForm({
   terapiaRealizada: string | null;
   observaciones: ObservacionVista[];
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    registrarSeguimiento,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(registrarSeguimiento, undefined);
 
   const [nuevaObservacion, setNuevaObservacion] = useState("");
 
@@ -38,7 +40,7 @@ export function SeguimientoForm({
   }, [pending, state]);
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form {...formProps} className="space-y-5">
       <input type="hidden" name="id" value={citaId} />
 
       <Field label="Terapia realizada">

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { Field, Input, Select, Textarea, Button } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { crearPaquete, type ActionState } from "../actions";
@@ -106,7 +107,11 @@ export default function NuevoPaqueteForm({
   feriados: string[];
   citas: CitaOcup[];
 }) {
-  const [state, formAction, pending] = useActionState(crearPaquete, initial);
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<ActionState>(crearPaquete, initial);
 
   const [pacienteId, setPacienteId] = useState("");
   const [terapeutaId, setTerapeutaId] = useState("");
@@ -286,7 +291,7 @@ export default function NuevoPaqueteForm({
   const finSemana = sumarDias(lunesSemana, 5); // sáb
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sedeId} />
       <input type="hidden" name="sesiones" value={sesionesJSON} />
 

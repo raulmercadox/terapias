@@ -1,14 +1,21 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { authenticate } from "./actions";
 import { Button, Field, Input } from "@/components/ui";
 
 export function LoginForm() {
-  const [error, formAction, pending] = useActionState(authenticate, undefined);
+  // Aquí el estado es el propio mensaje de error, no un objeto con `error`.
+  const {
+    estado: error,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<string | undefined>(authenticate, undefined, {
+    fallo: (e) => Boolean(e),
+  });
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form {...formProps} className="space-y-4">
       <Field label="Correo" required>
         <Input
           name="email"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import {
   actualizarPaquete,
@@ -30,10 +31,12 @@ export default function PaqueteAcciones({
 }) {
   const [editar, setEditar] = useState(false);
 
-  const [editState, editAction, editPending] = useActionState(
-    actualizarPaquete,
-    initial,
-  );
+  // Solo el de edición tiene campos que conservar; los otros son un botón.
+  const {
+    estado: editState,
+    pendiente: editPending,
+    formProps: editFormProps,
+  } = useFormReintento<ActionState>(actualizarPaquete, initial);
   const [estadoState, estadoAction, estadoPending] = useActionState(
     cambiarEstadoPaquete,
     initial,
@@ -64,7 +67,7 @@ export default function PaqueteAcciones({
           Editar datos
         </Button>
       ) : (
-        <form action={editAction} className="space-y-3">
+        <form {...editFormProps} className="space-y-3">
           <input type="hidden" name="paqueteId" value={paqueteId} />
           <Field label="Precio (S/)" required>
             <Input

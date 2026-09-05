@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { registrarPago, type RegistrarPagoState } from "../actions";
 import {
   Card,
@@ -55,7 +56,11 @@ export function PagoForm({
   paquetes: PaqueteOpt[];
   hoy: string;
 }) {
-  const [state, formAction, pending] = useActionState(registrarPago, initialState);
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<RegistrarPagoState>(registrarPago, initialState);
   const [pacienteId, setPacienteId] = useState("");
   const [paqueteId, setPaqueteId] = useState("");
   const [monto, setMonto] = useState("");
@@ -82,7 +87,7 @@ export function PagoForm({
       : 0;
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form {...formProps} className="space-y-5">
       <Card className="space-y-4">
         {state.error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

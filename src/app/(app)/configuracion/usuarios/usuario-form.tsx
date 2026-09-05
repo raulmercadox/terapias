@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import type { Rol } from "@prisma/client";
 import { crearUsuario, actualizarUsuario, type FormState } from "../actions";
 import { Button, ButtonLink, Field, Input, Select } from "@/components/ui";
@@ -27,10 +28,11 @@ export function UsuarioForm({
 }) {
   const editando = Boolean(usuario);
   const action = editando ? actualizarUsuario : crearUsuario;
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(action, undefined);
 
   const [rol, setRol] = useState<Rol>(usuario?.rol ?? "USUARIO");
   const [sedeIds, setSedeIds] = useState<string[]>(usuario?.sedeIds ?? []);
@@ -50,7 +52,7 @@ export function UsuarioForm({
   }
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form {...formProps} className="space-y-5">
       {editando && <input type="hidden" name="id" value={usuario!.id} />}
 
       <div className="grid gap-4 sm:grid-cols-2">

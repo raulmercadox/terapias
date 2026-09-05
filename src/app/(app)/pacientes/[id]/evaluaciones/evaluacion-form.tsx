@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import {
   Button,
   ButtonLink,
@@ -122,17 +123,18 @@ export function EvaluacionForm({
   inicial?: EvaluacionInicial;
   cancelarHref: string;
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    {},
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(action, {});
   const v = inicial ?? {};
   const res = v.resultados ?? {};
   // Controlada porque de ella depende qué grupos del área de lenguaje se ven.
   const [modalidad, setModalidad] = useState(v.modalidadLenguaje ?? "");
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form {...formProps} className="space-y-6">
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}

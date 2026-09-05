@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import {
   Button,
   ButtonLink,
@@ -52,15 +52,16 @@ export function PacienteForm({
   inicial?: PacienteInicial;
   modo: "crear" | "editar";
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    {},
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(action, {});
   const fe = state.fieldErrors;
   const v = inicial ?? {};
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form {...formProps} className="space-y-6">
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}

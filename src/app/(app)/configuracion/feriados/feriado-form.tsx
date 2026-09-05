@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import {
   crearFeriado,
   eliminarFeriado,
@@ -9,13 +9,14 @@ import {
 import { Button, Field, Input } from "@/components/ui";
 
 export function FeriadoForm({ sedeId }: { sedeId: string }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    crearFeriado,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(crearFeriado, undefined);
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sedeId} />
 
       <Field label="Fecha" required>
@@ -39,13 +40,14 @@ export function FeriadoForm({ sedeId }: { sedeId: string }) {
 }
 
 export function EliminarFeriadoBtn({ id }: { id: string }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    eliminarFeriado,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(eliminarFeriado, undefined);
 
   return (
-    <form action={formAction} className="inline">
+    <form {...formProps} className="inline">
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="danger" disabled={pending}>
         {pending ? "…" : "Eliminar"}

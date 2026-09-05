@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { Td, Badge, Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { fecha, fechaInput } from "@/lib/utils";
 import {
@@ -40,19 +41,26 @@ export default function SesionFila({
   const [modo, setModo] = useState<"none" | "asistencia" | "reprogramar">(
     "none",
   );
+  const cerrar = () => setModo("none");
 
-  const [asisState, asisAction, asisPending] = useActionState(
-    registrarAsistencia,
-    initial,
-  );
-  const [reprState, reprAction, reprPending] = useActionState(
-    reprogramarSesion,
-    initial,
-  );
+  // El panel se cierra desde `alExito`, no desde un efecto: `ok` se queda en
+  // true tras el primer guardado, así que un efecto que dependa de él no vuelve
+  // a dispararse y el panel quedaría abierto en las correcciones siguientes.
+  const asis = useFormReintento<ActionState>(registrarAsistencia, initial, {
+    fallo: (s) => !s.ok,
+    alExito: cerrar,
+  });
+  const repr = useFormReintento<ActionState>(reprogramarSesion, initial, {
+    fallo: (s) => !s.ok,
+    alExito: cerrar,
+  });
 
-  useEffect(() => {
-    if (asisState.ok || reprState.ok) setModo("none");
-  }, [asisState.ok, reprState.ok]);
+  const abrir = (m: "asistencia" | "reprogramar") => {
+    // Al reabrir se parte de lo guardado, no del intento fallido anterior.
+    asis.limpiar();
+    repr.limpiar();
+    setModo((prev) => (prev === m ? "none" : m));
+  };
 
   return (
     <>
@@ -75,9 +83,7 @@ export default function SesionFila({
               type="button"
               variant="ghost"
               className="px-2 py-1"
-              onClick={() =>
-                setModo((m) => (m === "asistencia" ? "none" : "asistencia"))
-              }
+              onClick={() => abrir("asistencia")}
             >
               Asistencia
             </Button>
@@ -85,9 +91,7 @@ export default function SesionFila({
               type="button"
               variant="ghost"
               className="px-2 py-1"
-              onClick={() =>
-                setModo((m) => (m === "reprogramar" ? "none" : "reprogramar"))
-              }
+              onClick={() => abrir("reprogramar")}
             >
               Reprogramar
             </Button>
@@ -99,7 +103,7 @@ export default function SesionFila({
         <tr className="bg-slate-50">
           <Td className="!p-0" />
           <td colSpan={6} className="px-4 py-4">
-            <form action={asisAction} className="space-y-3">
+            <form {...asis.formProps} className="space-y-3">
               <input type="hidden" name="citaId" value={cita.id} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Asistencia" required>
@@ -133,8 +137,8 @@ export default function SesionFila({
                   placeholder="Notas de la sesión…"
                 />
               </Field>
-              {asisState.error && (
-                <p className="text-sm text-red-700">{asisState.error}</p>
+              {asis.hayIntento && asis.estado.error && (
+                <p className="text-sm text-red-700">{asis.estado.error}</p>
               )}
               <div className="flex justify-end gap-2">
                 <Button
@@ -144,8 +148,8 @@ export default function SesionFila({
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={asisPending}>
-                  {asisPending ? "Guardando…" : "Guardar asistencia"}
+                <Button type="submit" disabled={asis.pendiente}>
+                  {asis.pendiente ? "Guardando…" : "Guardar asistencia"}
                 </Button>
               </div>
             </form>
@@ -157,7 +161,7 @@ export default function SesionFila({
         <tr className="bg-slate-50">
           <Td className="!p-0" />
           <td colSpan={6} className="px-4 py-4">
-            <form action={reprAction} className="space-y-3">
+            <form {...repr.formProps} className="space-y-3">
               <input type="hidden" name="citaId" value={cita.id} />
               <div className="grid gap-3 sm:grid-cols-4">
                 <Field label="Fecha" required>
@@ -198,8 +202,8 @@ export default function SesionFila({
                   </Select>
                 </Field>
               </div>
-              {reprState.error && (
-                <p className="text-sm text-red-700">{reprState.error}</p>
+              {repr.hayIntento && repr.estado.error && (
+                <p className="text-sm text-red-700">{repr.estado.error}</p>
               )}
               <div className="flex justify-end gap-2">
                 <Button
@@ -209,8 +213,8 @@ export default function SesionFila({
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={reprPending}>
-                  {reprPending ? "Guardando…" : "Reprogramar"}
+                <Button type="submit" disabled={repr.pendiente}>
+                  {repr.pendiente ? "Guardando…" : "Reprogramar"}
                 </Button>
               </div>
             </form>

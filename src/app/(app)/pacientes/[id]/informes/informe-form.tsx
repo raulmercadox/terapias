@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useActionState, useId } from "react";
+import { useState, useId } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import {
   Button,
   ButtonLink,
@@ -33,7 +34,14 @@ export type InformeInicial = {
  * EI / EP / LE. Las secciones son fijas; los ítems se pueden editar, agregar
  * y quitar en cada informe.
  */
-function TablaSeccion({ seccion }: { seccion: SeccionInforme }) {
+function TablaSeccion({
+  seccion,
+  valorEn,
+}: {
+  seccion: SeccionInforme;
+  /** Valor del intento fallido para el ítem n de esta sección, si lo hay. */
+  valorEn: (nombre: string, indice: number, original: string) => string;
+}) {
   const [items, setItems] = useState(seccion.items);
   // Ids para los ítems que se agreguen aquí. No colisionan con los del
   // catálogo porque llevan prefijo propio.
@@ -78,7 +86,16 @@ function TablaSeccion({ seccion }: { seccion: SeccionInforme }) {
                 <CeldasValor
                   seccionId={seccion.id}
                   itemId={item.id}
-                  inicial={item.valor ?? null}
+                  // CeldasValor guarda el valor en su propio estado, y al
+                  // remontar el form tras un error volvería al del informe:
+                  // se le devuelve lo que el usuario había marcado.
+                  inicial={
+                    (valorEn(
+                      `item_valor_${seccion.id}`,
+                      i,
+                      item.valor ?? "",
+                    ) as ValorInforme | "") || null
+                  }
                 />
                 <td className="py-1 text-right">
                   <button
@@ -169,15 +186,17 @@ export function InformeForm({
   inicial?: InformeInicial;
   cancelarHref: string;
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    {},
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+    valorEn,
+  } = useFormReintento<FormState>(action, {});
   const v = inicial ?? {};
   const secciones = v.secciones ?? seccionesIniciales();
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form {...formProps} className="space-y-6">
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}
@@ -211,7 +230,7 @@ export function InformeForm({
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
             {s.titulo}
           </h2>
-          <TablaSeccion seccion={s} />
+          <TablaSeccion seccion={s} valorEn={valorEn} />
         </Card>
       ))}
 

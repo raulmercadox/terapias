@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import {
   Button,
   Card,
@@ -100,10 +101,11 @@ function ApoderadoFields({
 
 function AgregarForm({ pacienteId }: { pacienteId: string }) {
   const action = agregarApoderado.bind(null, pacienteId);
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    {},
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(action, {});
   const [abierto, setAbierto] = useState(false);
 
   if (!abierto) {
@@ -124,7 +126,7 @@ function AgregarForm({ pacienteId }: { pacienteId: string }) {
           {state.error}
         </p>
       )}
-      <form action={formAction} className="space-y-3">
+      <form {...formProps} className="space-y-3">
         <ApoderadoFields fe={state.fieldErrors} />
         <div className="flex gap-2">
           <Button type="submit" disabled={pending}>
@@ -151,10 +153,11 @@ function EditarForm({
   onCerrar: () => void;
 }) {
   const action = actualizarApoderado.bind(null, apoderado.id);
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    {},
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(action, {});
 
   return (
     <Card className="border-sky-200">
@@ -166,7 +169,7 @@ function EditarForm({
           {state.error}
         </p>
       )}
-      <form action={formAction} className="space-y-3">
+      <form {...formProps} className="space-y-3">
         <ApoderadoFields inicial={apoderado} fe={state.fieldErrors} />
         <div className="flex gap-2">
           <Button type="submit" disabled={pending}>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { guardarHorarioLaboral, type FormState } from "../actions";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { DIA_NOMBRE, DIAS_ORDEN } from "../../sesiones/horario";
@@ -31,10 +32,11 @@ export function HorarioForm({
   sede: SedeHorario;
   guardado?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    guardarHorarioLaboral,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(guardarHorarioLaboral, undefined);
 
   // Lista de intervalos editable; el "inicial" se elige entre sus valores.
   const [listaStr, setListaStr] = useState(
@@ -48,7 +50,7 @@ export function HorarioForm({
     : String(opciones[0] ?? "");
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sede.id} />
 
       <div className="grid grid-cols-2 gap-4">

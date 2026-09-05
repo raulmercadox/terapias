@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { guardarSede, type FormState } from "../actions";
 import { Button, ButtonLink, Field, Input } from "@/components/ui";
 
@@ -13,13 +13,14 @@ type SedeInicial = {
 };
 
 export function SedeForm({ sede }: { sede?: SedeInicial }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    guardarSede,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+  } = useFormReintento<FormState>(guardarSede, undefined);
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form {...formProps} className="space-y-4">
       {sede && <input type="hidden" name="id" value={sede.id} />}
 
       <Field label="Nombre" required>

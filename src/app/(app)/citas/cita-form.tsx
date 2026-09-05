@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormReintento } from "@/components/form-reintento";
 import { Button, ButtonLink, Field, Input, Select, Textarea } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { crearCita, actualizarCita, type FormState } from "./actions";
@@ -31,23 +31,27 @@ export function CitaForm({
 }) {
   const editando = Boolean(inicial);
   const action = editando ? actualizarCita : crearCita;
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    action,
-    undefined,
-  );
+  const {
+    estado: state,
+    pendiente: pending,
+    formProps,
+    valor,
+  } = useFormReintento<FormState>(action, undefined);
 
   const cancelHref = editando ? `/citas/${inicial!.id}` : "/citas";
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form {...formProps} className="space-y-4">
       {editando && <input type="hidden" name="id" value={inicial!.id} />}
 
       <Field label="Paciente" required>
+        {/* El Combobox guarda su valor en estado propio, así que al remontar el
+            form hay que devolvérselo desde el borrador. */}
         <Combobox
           name="pacienteId"
           required
           options={pacientes}
-          defaultValue={inicial?.pacienteId ?? ""}
+          defaultValue={valor("pacienteId", inicial?.pacienteId ?? "")}
           placeholder="Seleccione un paciente…"
         />
       </Field>
