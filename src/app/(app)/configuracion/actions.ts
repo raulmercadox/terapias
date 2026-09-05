@@ -389,11 +389,37 @@ const horarioSchema = z
         "Cada intervalo debe ser un múltiplo de 5 entre 5 y 120 minutos.",
       ),
     intervaloCalendario: z.coerce.number().int("Intervalo inicial inválido."),
+    // Refrigerio opcional: los <input type="time"> vacíos llegan como "".
+    refrigerioInicio: z
+      .string()
+      .transform((s) => s.trim())
+      .refine((s) => s === "" || HORA_RE.test(s), "Hora de refrigerio inválida."),
+    refrigerioFin: z
+      .string()
+      .transform((s) => s.trim())
+      .refine((s) => s === "" || HORA_RE.test(s), "Hora de refrigerio inválida."),
   })
   .refine((d) => d.horaCierre > d.horaApertura, {
     message: "El cierre debe ser posterior a la apertura.",
     path: ["horaCierre"],
   })
+  .refine((d) => (d.refrigerioInicio === "") === (d.refrigerioFin === ""), {
+    message: "Indique el inicio y el fin del refrigerio, o deje ambos vacíos.",
+    path: ["refrigerioFin"],
+  })
+  .refine((d) => d.refrigerioInicio === "" || d.refrigerioFin > d.refrigerioInicio, {
+    message: "El fin del refrigerio debe ser posterior a su inicio.",
+    path: ["refrigerioFin"],
+  })
+  .refine(
+    (d) =>
+      d.refrigerioInicio === "" ||
+      (d.refrigerioInicio < d.horaCierre && d.refrigerioFin > d.horaApertura),
+    {
+      message: "El refrigerio debe caer dentro del horario de atención.",
+      path: ["refrigerioInicio"],
+    },
+  )
   .refine((d) => d.intervalosCalendario.includes(d.intervaloCalendario), {
     message: "El intervalo inicial debe estar en la lista de intervalos.",
     path: ["intervaloCalendario"],
@@ -412,6 +438,8 @@ export async function guardarHorarioLaboral(
     diasLaborales: formData.getAll("diasLaborales").map((d) => Number(d)),
     intervalosCalendario: String(formData.get("intervalosCalendario") ?? ""),
     intervaloCalendario: String(formData.get("intervaloCalendario") ?? "30"),
+    refrigerioInicio: String(formData.get("refrigerioInicio") ?? ""),
+    refrigerioFin: String(formData.get("refrigerioFin") ?? ""),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
 
@@ -422,6 +450,8 @@ export async function guardarHorarioLaboral(
     diasLaborales,
     intervalosCalendario,
     intervaloCalendario,
+    refrigerioInicio,
+    refrigerioFin,
   } = parsed.data;
 
   const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
@@ -438,6 +468,9 @@ export async function guardarHorarioLaboral(
     data: {
       horaApertura,
       horaCierre,
+      // Vacío = sin refrigerio; los dos campos van juntos.
+      refrigerioInicio: refrigerioInicio || null,
+      refrigerioFin: refrigerioFin || null,
       diasLaborales: dias,
       intervalosCalendario: intervalos,
       intervaloCalendario,

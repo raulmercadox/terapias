@@ -43,6 +43,8 @@ export default async function NuevoPaquetePage() {
       select: {
         horaApertura: true,
         horaCierre: true,
+        refrigerioInicio: true,
+        refrigerioFin: true,
         diasLaborales: true,
         intervaloCalendario: true,
         intervalosCalendario: true,
@@ -102,6 +104,8 @@ export default async function NuevoPaquetePage() {
             programas={programas}
             horaApertura={sede?.horaApertura ?? "09:00"}
             horaCierre={sede?.horaCierre ?? "13:00"}
+            refrigerioInicio={sede?.refrigerioInicio ?? null}
+            refrigerioFin={sede?.refrigerioFin ?? null}
             diasLaborales={sede?.diasLaborales ?? [1, 2, 3, 4, 5, 6]}
             intervaloCalendario={sede?.intervaloCalendario ?? 30}
             intervalosCalendario={sede?.intervalosCalendario ?? []}

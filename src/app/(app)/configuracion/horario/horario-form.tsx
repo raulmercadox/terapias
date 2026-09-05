@@ -10,6 +10,8 @@ type SedeHorario = {
   id: string;
   horaApertura: string;
   horaCierre: string;
+  refrigerioInicio: string | null;
+  refrigerioFin: string | null;
   diasLaborales: number[];
   intervaloCalendario: number;
   intervalosCalendario: number[];
@@ -71,6 +73,27 @@ export function HorarioForm({
           />
         </Field>
       </div>
+
+      <Field label="Refrigerio (opcional)">
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            type="time"
+            name="refrigerioInicio"
+            defaultValue={sede.refrigerioInicio ?? ""}
+            aria-label="Inicio del refrigerio"
+          />
+          <Input
+            type="time"
+            name="refrigerioFin"
+            defaultValue={sede.refrigerioFin ?? ""}
+            aria-label="Fin del refrigerio"
+          />
+        </div>
+        <p className="mt-1 text-xs text-slate-400">
+          Si lo indicas, al armar un paquete no se podrán agendar sesiones que
+          se crucen con esa hora. Deja ambos campos vacíos para no usarlo.
+        </p>
+      </Field>
 
       <Field label="Intervalos del calendario (minutos)">
         <Input

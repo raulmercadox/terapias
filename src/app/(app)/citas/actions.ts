@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser, assertSedeAccess, requireActiveSede } from "@/lib/session";
 import { cupoTerapeuta, conflictoPaciente } from "@/lib/conflictos";
-import { DIA_NOMBRE } from "../sesiones/horario";
+import { motivoFueraDeHorario } from "../sesiones/horario";
 import { fecha as fmtFecha } from "@/lib/utils";
 
 /* ── Validación ───────────────────────────────────────── */
@@ -48,16 +48,17 @@ async function validarFranjaCita(params: {
 
   const sede = await prisma.sede.findUnique({
     where: { id: sedeId },
-    select: { horaApertura: true, horaCierre: true, diasLaborales: true },
+    select: {
+      horaApertura: true,
+      horaCierre: true,
+      diasLaborales: true,
+      refrigerioInicio: true,
+      refrigerioFin: true,
+    },
   });
   if (sede) {
-    const dia = fecha.getDay();
-    if (!sede.diasLaborales.includes(dia)) {
-      return `La sede no atiende los ${DIA_NOMBRE[dia]}.`;
-    }
-    if (horaInicio < sede.horaApertura || horaFin > sede.horaCierre) {
-      return `El horario de atención es de ${sede.horaApertura} a ${sede.horaCierre}.`;
-    }
+    const motivo = motivoFueraDeHorario(sede, fecha, horaInicio, horaFin);
+    if (motivo) return motivo;
   }
 
   const feriado = await prisma.feriado.findUnique({

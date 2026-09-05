@@ -4,6 +4,10 @@ import {
   generarIntervalos,
   esIntervaloValido,
   opcionesPaso,
+  chocaConRefrigerio,
+  refrigerioDe,
+  motivoFueraDeHorario,
+  motivoFueraDeHorarioEnDia,
   PASO_GRILLA_MIN,
 } from "./horario";
 
@@ -56,4 +60,150 @@ test("opcionesPaso usa los pasos predefinidos si la sede no configuró lista", (
 
 test("opcionesPaso agrega el intervalo inicial si falta en la lista, ordenado", () => {
   assert.deepEqual(opcionesPaso([60, 15], 45), [15, 45, 60]);
+});
+
+// Refrigerio de la sede: es opcional, y cuando está configurado ninguna sesión
+// puede invadirlo (ni empezando dentro, ni entrando desde antes).
+
+test("refrigerioDe exige ambos campos y un rango con sentido", () => {
+  assert.deepEqual(refrigerioDe("13:00", "14:00"), {
+    inicio: "13:00",
+    fin: "14:00",
+  });
+  // Opcional: sin configurar es null, no un rango que bloquee horas.
+  assert.equal(refrigerioDe(null, null), null);
+  assert.equal(refrigerioDe("13:00", null), null);
+  assert.equal(refrigerioDe("", ""), null);
+  // Datos inutilizables: se ignoran en vez de bloquear el día entero.
+  assert.equal(refrigerioDe("14:00", "13:00"), null);
+  assert.equal(refrigerioDe("13:00", "13:00"), null);
+  assert.equal(refrigerioDe("25:00", "14:00"), null);
+});
+
+test("chocaConRefrigerio detecta la sesión que entra desde antes", () => {
+  const r = refrigerioDe("13:00", "14:00");
+  // Empieza dentro.
+  assert.equal(chocaConRefrigerio("13:15", "14:00", r), true);
+  // Empieza antes pero lo invade: este es el caso que se escapa si solo se
+  // mira la hora de inicio.
+  assert.equal(chocaConRefrigerio("12:30", "13:15", r), true);
+  // Lo cubre por completo.
+  assert.equal(chocaConRefrigerio("12:00", "15:00", r), true);
+  // Pegadas al borde, sin invadir.
+  assert.equal(chocaConRefrigerio("12:15", "13:00", r), false);
+  assert.equal(chocaConRefrigerio("14:00", "14:45", r), false);
+  // Sin refrigerio configurado nunca choca.
+  assert.equal(chocaConRefrigerio("13:15", "14:00", null), false);
+});
+
+test("esIntervaloValido rechaza los inicios que se cruzan con el refrigerio", () => {
+  const r = refrigerioDe("13:00", "14:00");
+  // Atención 09:00–18:00, sesiones de 45 min.
+  const valido = (hora: string) =>
+    esIntervaloValido("09:00", "18:00", 45, hora, PASO_GRILLA_MIN, r);
+
+  assert.equal(valido("12:00"), true); // 12:00–12:45, antes del refrigerio
+  assert.equal(valido("12:15"), true); // 12:15–13:00, termina justo al empezar
+  assert.equal(valido("12:30"), false); // 12:30–13:15, lo invade
+  assert.equal(valido("13:00"), false); // arranca dentro
+  assert.equal(valido("13:45"), false); // 13:45–14:30, todavía lo pisa
+  assert.equal(valido("14:00"), true); // 14:00–14:45, ya salió
+
+  // Sin refrigerio, las mismas horas son válidas.
+  assert.equal(
+    esIntervaloValido("09:00", "18:00", 45, "13:00", PASO_GRILLA_MIN),
+    true,
+  );
+});
+
+test("generarIntervalos no cambia: el refrigerio se pinta, no se oculta", () => {
+  // La grilla sigue ofreciendo la fila para que el calendario pueda marcarla
+  // como "Refrig." en vez de que la hora desaparezca sin explicación.
+  const inicios = generarIntervalos("12:00", "15:00", 60, 60).map((i) => i.inicio);
+  assert.deepEqual(inicios, ["12:00", "13:00", "14:00"]);
+});
+
+// Reglas del horario de la sede, compartidas por agendar una cita suelta y
+// reprogramar la sesión de un paquete (antes solo las aplicaba la primera).
+
+const SEDE = {
+  horaApertura: "09:00",
+  horaCierre: "18:00",
+  diasLaborales: [1, 2, 3, 4, 5, 6], // sin domingos
+  refrigerioInicio: "13:00",
+  refrigerioFin: "14:00",
+};
+const LUNES = new Date(2026, 8, 7); // 07/09/2026
+const DOMINGO = new Date(2026, 8, 6);
+
+test("motivoFueraDeHorario acepta una franja normal", () => {
+  assert.equal(motivoFueraDeHorario(SEDE, LUNES, "09:00", "09:45"), null);
+  // Pegada al cierre y pegada al refrigerio: siguen siendo válidas.
+  assert.equal(motivoFueraDeHorario(SEDE, LUNES, "17:15", "18:00"), null);
+  assert.equal(motivoFueraDeHorario(SEDE, LUNES, "12:15", "13:00"), null);
+});
+
+test("motivoFueraDeHorario rechaza el día no laborable", () => {
+  assert.equal(
+    motivoFueraDeHorario(SEDE, DOMINGO, "09:00", "09:45"),
+    "La sede no atiende los Domingo.",
+  );
+});
+
+test("motivoFueraDeHorario rechaza fuera del rango de atención", () => {
+  // El caso que se colaba al reprogramar: mover una sesión a las 22:00.
+  assert.equal(
+    motivoFueraDeHorario(SEDE, LUNES, "22:00", "22:45"),
+    "El horario de atención es de 09:00 a 18:00.",
+  );
+  // Antes de abrir, y terminando después de cerrar.
+  assert.equal(
+    motivoFueraDeHorario(SEDE, LUNES, "08:00", "08:45"),
+    "El horario de atención es de 09:00 a 18:00.",
+  );
+  assert.equal(
+    motivoFueraDeHorario(SEDE, LUNES, "17:30", "18:15"),
+    "El horario de atención es de 09:00 a 18:00.",
+  );
+});
+
+test("motivoFueraDeHorario rechaza el cruce con el refrigerio", () => {
+  assert.equal(
+    motivoFueraDeHorario(SEDE, LUNES, "12:30", "13:15"),
+    "Esa hora se cruza con el refrigerio de 13:00 a 14:00.",
+  );
+});
+
+test("motivoFueraDeHorario ignora el refrigerio si la sede no lo configuró", () => {
+  const sinRefrigerio = { ...SEDE, refrigerioInicio: null, refrigerioFin: null };
+  assert.equal(motivoFueraDeHorario(sinRefrigerio, LUNES, "13:00", "13:45"), null);
+});
+
+// Al renovar un paquete se valida la plantilla semanal heredada (día + hora),
+// no fechas concretas: la franja se repite todas las semanas.
+
+test("motivoFueraDeHorarioEnDia aplica las mismas reglas sobre el día suelto", () => {
+  assert.equal(motivoFueraDeHorarioEnDia(SEDE, 1, "09:00", "09:45"), null);
+  assert.equal(
+    motivoFueraDeHorarioEnDia(SEDE, 0, "09:00", "09:45"),
+    "La sede no atiende los Domingo.",
+  );
+  assert.equal(
+    motivoFueraDeHorarioEnDia(SEDE, 1, "22:00", "22:45"),
+    "El horario de atención es de 09:00 a 18:00.",
+  );
+  assert.equal(
+    motivoFueraDeHorarioEnDia(SEDE, 1, "13:00", "13:45"),
+    "Esa hora se cruza con el refrigerio de 13:00 a 14:00.",
+  );
+});
+
+test("motivoFueraDeHorario delega en la variante por día", () => {
+  // El envoltorio por fecha no debe cambiar el veredicto.
+  for (const [inicio, fin] of [["09:00", "09:45"], ["22:00", "22:45"], ["12:30", "13:15"]]) {
+    assert.equal(
+      motivoFueraDeHorario(SEDE, LUNES, inicio, fin),
+      motivoFueraDeHorarioEnDia(SEDE, LUNES.getDay(), inicio, fin),
+    );
+  }
 });

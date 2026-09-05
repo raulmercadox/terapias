@@ -21,6 +21,10 @@ import {
   claveFecha,
   aMinutos,
   sumarMinutos,
+  chocaConRefrigerio,
+  refrigerioDe,
+  motivoFueraDeHorario,
+  motivoFueraDeHorarioEnDia,
   DIA_NOMBRE,
   PASO_GRILLA_MIN,
 } from "./horario";
@@ -166,9 +170,16 @@ export async function crearPaquete(
   // Configuración de la sede (horario laboral).
   const sede = await prisma.sede.findUnique({
     where: { id: sedeId },
-    select: { horaApertura: true, horaCierre: true, diasLaborales: true },
+    select: {
+      horaApertura: true,
+      horaCierre: true,
+      diasLaborales: true,
+      refrigerioInicio: true,
+      refrigerioFin: true,
+    },
   });
   if (!sede) return { ok: false, error: "Sede no encontrada." };
+  const refrigerio = refrigerioDe(sede.refrigerioInicio, sede.refrigerioFin);
 
   const terapeutaId = data.terapeutaId;
   const ter = await prisma.terapeuta.findFirst({
@@ -206,6 +217,13 @@ export async function crearPaquete(
         error: `El ${DIA_NOMBRE[dia]} ${s.fecha} no es laborable en esta sede.`,
       };
     }
+    const horaFin = sumarMinutos(s.hora, programa.duracionMin);
+    if (chocaConRefrigerio(s.hora, horaFin, refrigerio)) {
+      return {
+        ok: false,
+        error: `La sesión de las ${s.hora} (${s.fecha}) se cruza con el refrigerio de ${refrigerio!.inicio} a ${refrigerio!.fin}.`,
+      };
+    }
     if (
       !esIntervaloValido(
         sede.horaApertura,
@@ -213,6 +231,7 @@ export async function crearPaquete(
         programa.duracionMin,
         s.hora,
         PASO_GRILLA_MIN,
+        refrigerio,
       )
     ) {
       return {
@@ -220,11 +239,7 @@ export async function crearPaquete(
         error: `La hora ${s.hora} (${s.fecha}) no es un intervalo válido del horario de atención.`,
       };
     }
-    finales.push({
-      fecha,
-      horaInicio: s.hora,
-      horaFin: sumarMinutos(s.hora, programa.duracionMin),
-    });
+    finales.push({ fecha, horaInicio: s.hora, horaFin });
   }
 
   // Orden cronológico para numerar y calcular inicio/fin.
@@ -392,6 +407,28 @@ export async function reprogramarSesion(
 
   const nuevaFecha = parseFecha(fecha);
   if (!nuevaFecha) return { ok: false, error: "Fecha inválida." };
+
+  // Reprogramar tiene que respetar el horario de la sede igual que agendar:
+  // día laborable, rango de atención y refrigerio.
+  const sedeCita = await prisma.sede.findUnique({
+    where: { id: cita.sedeId },
+    select: {
+      horaApertura: true,
+      horaCierre: true,
+      diasLaborales: true,
+      refrigerioInicio: true,
+      refrigerioFin: true,
+    },
+  });
+  if (sedeCita) {
+    const motivo = motivoFueraDeHorario(
+      sedeCita,
+      nuevaFecha,
+      horaInicio,
+      horaFin,
+    );
+    if (motivo) return { ok: false, error: motivo };
+  }
 
   // El paciente no puede quedar con dos sesiones solapadas.
   const pc = await conflictoPaciente(prisma, {
@@ -635,6 +672,38 @@ export async function renovarPaquete(
   const primera = citasOrigen[0];
   const duracionMin =
     Math.max(0, aMinutos(primera.horaFin) - aMinutos(primera.horaInicio)) || 45;
+
+  // El horario heredado pudo dejar de ser válido si la sede cambió su
+  // configuración después de crear el paquete original. Se valida la plantilla
+  // semanal y no cada fecha: la franja se repite, así que saltarla (como se
+  // hace con los feriados) dejaría el paquete corto sin avisar. Mejor negarse
+  // y decir qué franja hay que mover.
+  const sedeRenovacion = await prisma.sede.findUnique({
+    where: { id: origen.sedeId },
+    select: {
+      horaApertura: true,
+      horaCierre: true,
+      diasLaborales: true,
+      refrigerioInicio: true,
+      refrigerioFin: true,
+    },
+  });
+  if (sedeRenovacion) {
+    for (const h of horario) {
+      const motivo = motivoFueraDeHorarioEnDia(
+        sedeRenovacion,
+        h.dia,
+        h.horaInicio,
+        sumarMinutos(h.horaInicio, duracionMin),
+      );
+      if (motivo) {
+        return {
+          ok: false,
+          error: `No se puede renovar con el horario del paquete (${DIA_NOMBRE[h.dia]} ${h.horaInicio}). ${motivo} Créelo desde “Nuevo paquete” con otro horario.`,
+        };
+      }
+    }
+  }
 
   // Cupo del programa (1 = individual; >1 = grupal). Paquetes antiguos: 1.
   let maxPacientes = 1;
