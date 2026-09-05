@@ -10,25 +10,34 @@ import {
   Table,
   Th,
   Td,
+  Select,
   Paginacion,
 } from "@/components/ui";
 import { nombreCompleto, edad } from "@/lib/utils";
 
 const POR_PAGINA = 20;
 
+/** Valores del filtro de estado; TODOS no aplica condición. */
+const ESTADOS = ["TODOS", "ACTIVO", "BAJA"] as const;
+type FiltroEstado = (typeof ESTADOS)[number];
+
 export default async function PacientesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pagina?: string }>;
+  searchParams: Promise<{ q?: string; estado?: string; pagina?: string }>;
 }) {
   const user = await requireUser();
   if (!puedeVerPagos(user)) notFound();
   const sedeId = await requireActiveSede(user);
-  const { q, pagina: paginaParam } = await searchParams;
+  const { q, estado: estadoParam, pagina: paginaParam } = await searchParams;
   const termino = (q ?? "").trim();
+  const estado: FiltroEstado = ESTADOS.includes(estadoParam as FiltroEstado)
+    ? (estadoParam as FiltroEstado)
+    : "TODOS";
 
   const where = {
     sedeId,
+    ...(estado === "TODOS" ? {} : { estado }),
     ...(termino
       ? {
           OR: [
@@ -72,7 +81,7 @@ export default async function PacientesPage({
         }
       />
 
-      <form method="get" className="flex gap-2">
+      <form method="get" className="flex flex-wrap gap-2">
         <input
           type="search"
           name="q"
@@ -80,6 +89,13 @@ export default async function PacientesPage({
           placeholder="Buscar por nombre o DNI..."
           className="w-full max-w-sm rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         />
+        <div className="w-48">
+          <Select name="estado" defaultValue={estado} aria-label="Filtrar por estado">
+            <option value="TODOS">Todos los estados</option>
+            <option value="ACTIVO">Solo activos</option>
+            <option value="BAJA">Solo bajas</option>
+          </Select>
+        </div>
         <button
           type="submit"
           className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -92,8 +108,18 @@ export default async function PacientesPage({
         <EmptyState
           message={
             termino
-              ? `No se encontraron pacientes para "${termino}".`
-              : "Aún no hay pacientes registrados en esta sede."
+              ? `No se encontraron pacientes para "${termino}"${
+                  estado === "ACTIVO"
+                    ? " entre los activos"
+                    : estado === "BAJA"
+                      ? " entre las bajas"
+                      : ""
+                }.`
+              : estado === "ACTIVO"
+                ? "No hay pacientes activos en esta sede."
+                : estado === "BAJA"
+                  ? "No hay pacientes dados de baja en esta sede."
+                  : "Aún no hay pacientes registrados en esta sede."
           }
         />
       ) : (
@@ -164,7 +190,10 @@ export default async function PacientesPage({
         totalPaginas={totalPaginas}
         total={total}
         hrefBase="/pacientes"
-        params={termino ? { q: termino } : {}}
+        params={{
+          ...(termino ? { q: termino } : {}),
+          ...(estado === "TODOS" ? {} : { estado }),
+        }}
       />
     </div>
   );
