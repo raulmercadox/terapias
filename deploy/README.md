@@ -1,7 +1,26 @@
 # Despliegue y configuración del servidor (producción)
 
-VPS Hostinger (`srv1724566.hstgr.cloud`, CentOS Stream 10), app en `/opt/genius`,
-servida por systemd (`genius.service`) detrás de nginx con HTTPS.
+El sitio es **https://geniusschool.com.pe** (también responde `www`). Corre en
+un VPS Hostinger (CentOS Stream 10) con app en `/opt/genius`, servida por
+systemd (`genius.service`) detrás de nginx con HTTPS.
+
+| Dato               | Valor                                          |
+| ------------------ | ---------------------------------------------- |
+| Dominio            | `geniusschool.com.pe`, `www.geniusschool.com.pe` |
+| IPv4 / IPv6        | `2.25.162.59` / `2a02:4780:75:9ebb::1`         |
+| Hostname del VPS   | `srv1724566.hstgr.cloud`                       |
+| Acceso             | `ssh root@2.25.162.59`                         |
+
+El hostname `srv1724566.hstgr.cloud` es solo el nombre que Hostinger le da a la
+máquina: sirve para entrar por SSH, pero **no** para abrir el sitio. El
+certificado se emitió para `geniusschool.com.pe`, así que pedir el sitio por ese
+hostname falla la verificación TLS (curl corta con error 60, «SSL peer
+certificate ... not OK»). Para comprobar que el sitio está sano hay que usar el
+dominio real:
+
+```bash
+curl -sI https://geniusschool.com.pe/login | head -1   # HTTP/1.1 200 OK
+```
 
 ## Cómo desplegar
 
@@ -75,14 +94,16 @@ Tras copiar: `systemctl daemon-reload && systemctl restart genius` y
 ## Notas
 
 - `genius.conf` tiene los bloques que agregó Certbot al emitir el certificado.
-  El `server` de :80 termina en `return 404` y solo redirige a HTTPS los dos
-  `$host` del dominio: por eso entrar por IP (`http://2.25.162.59`) responde
-  **404** aunque la app esté sana. Para servir también por IP habría que
-  agregarle un `return 301 https://...` o un bloque propio.
+  El `server` de :80 termina en `return 404` y solo redirige a HTTPS cuando
+  `$host` es `geniusschool.com.pe` o `www.geniusschool.com.pe`: por eso entrar
+  por IP (`http://2.25.162.59`) responde **404** aunque la app esté sana. Para
+  servir también por IP habría que agregarle un `return 301 https://...` o un
+  bloque propio.
 - `nginx.conf` base fue editado en el servidor para quitarle `default_server`
   (lo declara este archivo) — ese cambio no está versionado aquí.
 - El `.env` de producción (`DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`) vive solo
-  en el servidor y no se versiona.
+  en el servidor y no se versiona. `AUTH_URL` es `https://geniusschool.com.pe`:
+  si cambia el dominio hay que actualizarlo ahí además de en nginx y Certbot.
 - macOS trae `openrsync`, no GNU rsync. No implementa `--out-format` ni
   `--itemize-changes`, y en dry-run lista todos los archivos como pendientes
   aunque estén idénticos; por eso el script detecta cambios comparando
