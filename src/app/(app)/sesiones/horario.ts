@@ -98,19 +98,12 @@ export function opcionesPaso(
   return [...pasos].sort((a, b) => a - b);
 }
 
-/**
- * Genera las horas de inicio posibles dentro de [apertura, cierre): una cada
- * `paso` minutos (por defecto, cada `duracionMin`), siempre que la sesión
- * completa (`duracionMin`) quepa antes del cierre. `fin` = inicio + duración.
- * El paso y la duración son independientes: una grilla de 15 min puede ofrecer
- * inicios 9:00/9:15/9:30… para sesiones de 90 min. Devuelve [] si los datos
- * son inválidos.
- */
-export function generarIntervalos(
+/** Un tramo continuo de atención: inicios cada `paso` desde `apertura`. */
+function generarTramo(
   apertura: string,
   cierre: string,
   duracionMin: number,
-  paso: number = duracionMin,
+  paso: number,
 ): Intervalo[] {
   const ini = aMinutos(apertura);
   const fin = aMinutos(cierre);
@@ -121,6 +114,38 @@ export function generarIntervalos(
     out.push({ inicio: aHHMM(t), fin: aHHMM(t + duracionMin) });
   }
   return out;
+}
+
+/**
+ * Genera las horas de inicio posibles dentro de [apertura, cierre): una cada
+ * `paso` minutos (por defecto, cada `duracionMin`), siempre que la sesión
+ * completa (`duracionMin`) quepa antes del cierre. `fin` = inicio + duración.
+ * El paso y la duración son independientes: una grilla de 15 min puede ofrecer
+ * inicios 9:00/9:15/9:30… para sesiones de 90 min. Devuelve [] si los datos
+ * son inválidos.
+ *
+ * El refrigerio parte el día en dos tramos y cada uno arranca su propia
+ * rejilla. Si no, la del día entero se alinea a la apertura y la primera hora
+ * tras el descanso cae donde toque: con sesiones de 40 min desde las 09:00, el
+ * siguiente inicio tras un refrigerio que acaba a las 14:00 sería 14:20, y las
+ * 14:00 —cuando el terapeuta ya está libre— no se podrían elegir.
+ */
+export function generarIntervalos(
+  apertura: string,
+  cierre: string,
+  duracionMin: number,
+  paso: number = duracionMin,
+  refrigerio?: Refrigerio | null,
+): Intervalo[] {
+  if (!refrigerio) return generarTramo(apertura, cierre, duracionMin, paso);
+
+  // Se acotan los tramos al horario por si el refrigerio quedara fuera de él.
+  const antes = refrigerio.inicio < cierre ? refrigerio.inicio : cierre;
+  const despues = refrigerio.fin > apertura ? refrigerio.fin : apertura;
+  return [
+    ...generarTramo(apertura, antes, duracionMin, paso),
+    ...generarTramo(despues, cierre, duracionMin, paso),
+  ];
 }
 
 /**

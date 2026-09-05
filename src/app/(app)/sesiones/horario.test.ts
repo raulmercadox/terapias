@@ -116,9 +116,7 @@ test("esIntervaloValido rechaza los inicios que se cruzan con el refrigerio", ()
   );
 });
 
-test("generarIntervalos no cambia: el refrigerio se pinta, no se oculta", () => {
-  // La grilla sigue ofreciendo la fila para que el calendario pueda marcarla
-  // como "Refrig." en vez de que la hora desaparezca sin explicación.
+test("generarIntervalos sin refrigerio conserva la rejilla del día entero", () => {
   const inicios = generarIntervalos("12:00", "15:00", 60, 60).map((i) => i.inicio);
   assert.deepEqual(inicios, ["12:00", "13:00", "14:00"]);
 });
@@ -206,4 +204,42 @@ test("motivoFueraDeHorario delega en la variante por día", () => {
       motivoFueraDeHorarioEnDia(SEDE, LUNES.getDay(), inicio, fin),
     );
   }
+});
+
+// El refrigerio parte el día en dos tramos y cada uno arranca su propia
+// rejilla. Sin esto, la del día entero se alinea a la apertura y la primera
+// hora tras el descanso cae donde toque (reportado en producción: con sesiones
+// de 40 min el calendario ofrecía las 14:20 en vez de las 14:00).
+
+test("tras el refrigerio la rejilla vuelve a empezar en su hora de fin", () => {
+  const r = refrigerioDe("13:00", "14:00");
+  const inicios = generarIntervalos("09:00", "18:00", 40, 40, r).map((i) => i.inicio);
+
+  assert.ok(inicios.includes("14:00"));
+  assert.ok(!inicios.includes("14:20"));
+  // Primer tramo alineado a la apertura; el último cabe justo antes del corte.
+  assert.deepEqual(inicios, [
+    "09:00", "09:40", "10:20", "11:00", "11:40", "12:20",
+    "14:00", "14:40", "15:20", "16:00", "16:40", "17:20",
+  ]);
+});
+
+test("ninguna hora ofrecida se cruza con el refrigerio", () => {
+  const r = refrigerioDe("13:00", "14:00")!;
+  for (const [duracion, paso] of [[40, 40], [45, 30], [90, 15], [30, 30]]) {
+    for (const i of generarIntervalos("09:00", "18:00", duracion, paso, r)) {
+      assert.equal(
+        chocaConRefrigerio(i.inicio, i.fin, r),
+        false,
+        `${duracion}min/paso ${paso}: ${i.inicio}–${i.fin} invade el refrigerio`,
+      );
+    }
+  }
+});
+
+test("un refrigerio fuera del horario no recorta el día", () => {
+  // Dato inconsistente: la configuración lo impide, pero no debe romper aquí.
+  const r = refrigerioDe("19:00", "20:00");
+  const inicios = generarIntervalos("09:00", "12:00", 60, 60, r).map((i) => i.inicio);
+  assert.deepEqual(inicios, ["09:00", "10:00", "11:00"]);
 });

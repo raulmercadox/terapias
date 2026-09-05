@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useFormReintento } from "@/components/form-reintento";
 import { Field, Input, Select, Textarea, Button } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
@@ -11,7 +11,6 @@ import {
   opcionesPaso,
   claveFecha,
   generarIntervalos,
-  chocaConRefrigerio,
   refrigerioDe,
 } from "../horario";
 
@@ -43,7 +42,6 @@ type EstadoCelda =
   | "lleno"
   | "pacienteOcupado"
   | "feriado"
-  | "refrigerio"
   | "pasado";
 
 /** Solapamiento de rangos "HH:mm" (comparación lexicográfica). */
@@ -150,14 +148,16 @@ export default function NuevoPaqueteForm({
   const faltan = Math.max(0, total - marcadas);
   const completo = total > 0 && marcadas === total;
 
-  const intervalos = useMemo(
-    () => generarIntervalos(horaApertura, horaCierre, duracionMin, paso),
-    [horaApertura, horaCierre, duracionMin, paso],
-  );
-
   const refrigerio = useMemo(
     () => refrigerioDe(refrigerioInicio, refrigerioFin),
     [refrigerioInicio, refrigerioFin],
+  );
+
+  // El refrigerio parte la grilla: cada tramo arranca su propia rejilla, así
+  // que la primera hora tras el descanso es justo cuando este termina.
+  const intervalos = useMemo(
+    () => generarIntervalos(horaApertura, horaCierre, duracionMin, paso, refrigerio),
+    [horaApertura, horaCierre, duracionMin, paso, refrigerio],
   );
 
   // Días disponibles (laborales) en orden lunes→domingo.
@@ -224,11 +224,6 @@ export default function NuevoPaqueteForm({
           mapa.set(key, "feriado");
           continue;
         }
-        // La sesión completa (no solo la celda) no puede invadir el refrigerio.
-        if (chocaConRefrigerio(intv.inicio, intv.fin, refrigerio)) {
-          mapa.set(key, "refrigerio");
-          continue;
-        }
 
         // El paciente ya tiene una sesión que se cruza ese día.
         const pacConflicto = citasPac.some(
@@ -265,7 +260,6 @@ export default function NuevoPaqueteForm({
     cupo,
     fechaDeDia,
     feriados,
-    refrigerio,
     hoyClave,
   ]);
 
@@ -476,8 +470,22 @@ export default function NuevoPaqueteForm({
                   </tr>
                 </thead>
                 <tbody>
-                  {intervalos.map((intv) => (
-                    <tr key={intv.inicio}>
+                  {intervalos.map((intv, i) => (
+                    <Fragment key={intv.inicio}>
+                      {/* Corte visible entre los dos tramos del día. */}
+                      {refrigerio &&
+                        intv.inicio >= refrigerio.fin &&
+                        (i === 0 || intervalos[i - 1].inicio < refrigerio.fin) && (
+                          <tr>
+                            <td
+                              colSpan={diasDisponibles.length + 1}
+                              className="py-1 text-center text-[11px] text-orange-500"
+                            >
+                              Refrigerio · {refrigerio.inicio}–{refrigerio.fin}
+                            </td>
+                          </tr>
+                        )}
+                    <tr>
                       <td className="whitespace-nowrap pr-2 text-right text-slate-400">
                         {intv.inicio}
                       </td>
@@ -522,11 +530,9 @@ export default function NuevoPaqueteForm({
                                           ? "cursor-not-allowed bg-red-50 text-red-300"
                                           : estado === "feriado"
                                             ? "cursor-not-allowed bg-violet-50 text-violet-400"
-                                            : estado === "refrigerio"
-                                              ? "cursor-not-allowed bg-orange-50 text-orange-400"
-                                              : estado === "pacienteOcupado"
-                                                ? "cursor-not-allowed bg-slate-100 text-slate-300"
-                                                : "cursor-not-allowed bg-slate-50 text-slate-300",
+                                            : estado === "pacienteOcupado"
+                                              ? "cursor-not-allowed bg-slate-100 text-slate-300"
+                                              : "cursor-not-allowed bg-slate-50 text-slate-300",
                               ].join(" ")}
                             >
                               {elegido
@@ -539,16 +545,15 @@ export default function NuevoPaqueteForm({
                                       ? "Lleno"
                                       : estado === "feriado"
                                         ? "Feriado"
-                                        : estado === "refrigerio"
-                                          ? "Refrig."
-                                          : estado === "pacienteOcupado"
-                                            ? "Paciente"
-                                            : "—"}
+                                        : estado === "pacienteOcupado"
+                                          ? "Paciente"
+                                          : "—"}
                             </button>
                           </td>
                         );
                       })}
                     </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -566,12 +571,6 @@ export default function NuevoPaqueteForm({
                 texto="Paciente ocupado"
               />
               <Leyenda clase="bg-violet-50 text-violet-400" texto="Feriado" />
-              {refrigerio && (
-                <Leyenda
-                  clase="bg-orange-50 text-orange-400"
-                  texto="Refrigerio"
-                />
-              )}
               <Leyenda clase="bg-sky-600 text-white" texto="Elegido" />
             </div>
 
@@ -630,8 +629,9 @@ export default function NuevoPaqueteForm({
 
       {refrigerio && (
         <p className="text-xs text-slate-400">
-          Refrigerio de {refrigerio.inicio} a {refrigerio.fin}: las sesiones que
-          se crucen con esa hora no se pueden seleccionar.
+          Refrigerio de {refrigerio.inicio} a {refrigerio.fin}: el calendario no
+          ofrece horas que se crucen con él, y tras el descanso vuelve a empezar
+          en {refrigerio.fin}.
         </p>
       )}
 
