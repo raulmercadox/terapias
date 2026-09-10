@@ -9,10 +9,19 @@ import {
   ButtonLink,
 } from "@/components/ui";
 import Link from "next/link";
-import { nombreCompleto, edad, fecha } from "@/lib/utils";
+import { nombreCompleto, edad, fecha, fechaHora } from "@/lib/utils";
 import { ApoderadosPanel, type ApoderadoVista } from "../apoderados-panel";
 import { EstadoToggle } from "../estado-toggle";
 import { normalizarSecciones, resumenAvance } from "./informes/informe";
+import {
+  pendienteDe,
+  CANAL_LABEL,
+  RESULTADO_LABEL,
+} from "../../seguimiento/seguimiento";
+import {
+  RegistrarInteraccion,
+  EliminarInteraccion,
+} from "../../seguimiento/interaccion-form";
 
 const PROGRAMA_LABEL: Record<string, string> = {
   ESCOLAR: "Escolar",
@@ -70,10 +79,13 @@ export default async function PacienteDetallePage({
           evaluador: { select: { nombres: true, apellidos: true } },
         },
       },
+      interacciones: { orderBy: { fecha: "desc" } },
     },
   });
 
   if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+
+  const pendiente = pendienteDe(paciente.interacciones);
 
   const apoderados: ApoderadoVista[] = paciente.apoderados.map((a) => ({
     id: a.id,
@@ -151,6 +163,67 @@ export default async function PacienteDetallePage({
               <Dato label="Diagnóstico" value={paciente.diagnostico} />
               <Dato label="Observaciones" value={paciente.observaciones} />
             </dl>
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Interacciones
+                </h2>
+                {pendiente ? (
+                  <Badge color="amber">
+                    Pendiente de contacto desde {fecha(pendiente.desde)}
+                  </Badge>
+                ) : (
+                  paciente.interacciones.length > 0 && (
+                    <Badge color="green">Seguimiento al día</Badge>
+                  )
+                )}
+              </div>
+              <RegistrarInteraccion pacienteId={paciente.id} />
+            </div>
+            {paciente.interacciones.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Sin interacciones registradas. Registra aquí las llamadas,
+                mensajes o visitas del interesado y los contactos que le haga
+                el centro.
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {paciente.interacciones.map((i) => (
+                  <li key={i.id} className="py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {i.direccion === "ENTRADA" ? (
+                          <Badge color="sky">← Entrada</Badge>
+                        ) : (
+                          <Badge
+                            color={i.resultado === "SIN_RESPUESTA" ? "amber" : "green"}
+                          >
+                            → Salida ·{" "}
+                            {i.resultado ? RESULTADO_LABEL[i.resultado] : "Contactado"}
+                          </Badge>
+                        )}
+                        <span className="text-sm text-slate-700">
+                          {CANAL_LABEL[i.canal]}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {fechaHora(i.fecha)}
+                          {i.autor ? ` · ${i.autor}` : ""}
+                        </span>
+                      </div>
+                      <EliminarInteraccion id={i.id} />
+                    </div>
+                    {i.nota && (
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                        {i.nota}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <Card>

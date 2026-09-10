@@ -10,6 +10,7 @@ import {
   assertSedeAccess,
   assertRolGestion,
 } from "@/lib/session";
+import { CANALES } from "../seguimiento/seguimiento";
 
 /* ── Helpers ──────────────────────────────────────────── */
 
@@ -165,10 +166,26 @@ export async function crearPaciente(
     apoderado = apoParsed.data;
   }
 
+  // Primer contacto opcional: el interesado entra a la bandeja de seguimiento.
+  const primerContacto = z.enum(CANALES).safeParse(opt(formData.get("pc_canal")));
+
   const paciente = await prisma.paciente.create({
     data: {
       sedeId,
       ...pacienteData(parsed.data),
+      ...(primerContacto.success
+        ? {
+            interacciones: {
+              create: {
+                sedeId,
+                direccion: "ENTRADA",
+                canal: primerContacto.data,
+                nota: opt(formData.get("pc_nota")) ?? null,
+                autor: user.nombre ?? null,
+              },
+            },
+          }
+        : {}),
       ...(apoderado
         ? {
             apoderados: {
@@ -188,6 +205,7 @@ export async function crearPaciente(
   });
 
   revalidatePath("/pacientes");
+  if (primerContacto.success) revalidatePath("/seguimiento");
   redirect(`/pacientes/${paciente.id}`);
 }
 

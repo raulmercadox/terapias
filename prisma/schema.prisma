@@ -85,6 +85,29 @@ enum MetodoPago {
   TARJETA
 }
 
+// ENTRADA: el interesado busca al centro (llama, escribe, viene a evaluación).
+// SALIDA: el centro lo busca a él para darle seguimiento.
+enum DireccionInteraccion {
+  ENTRADA
+  SALIDA
+}
+
+enum CanalInteraccion {
+  LLAMADA
+  WHATSAPP
+  VISITA
+  EVALUACION
+  CORREO
+  REDES
+  OTRO
+}
+
+// Solo para SALIDA: si no se logró hablar con él, sigue pendiente en la bandeja.
+enum ResultadoSalida {
+  CONTACTADO
+  SIN_RESPUESTA
+}
+
 // ─────────────────────────────────────────────────────────────
 // Núcleo: Sedes y Usuarios
 // ─────────────────────────────────────────────────────────────
@@ -124,6 +147,7 @@ model Sede {
   evaluaciones      Evaluacion[]
   historiasClinicas HistoriaClinica[]
   informesAvance    InformeAvance[]
+  interacciones     Interaccion[]
 }
 
 model User {
@@ -202,6 +226,7 @@ model Paciente {
   evaluaciones    Evaluacion[]
   historiaClinica HistoriaClinica?
   informesAvance  InformeAvance[]
+  interacciones   Interaccion[]
 
   @@index([sedeId])
   @@index([dni])
@@ -538,4 +563,31 @@ model Pago {
   @@unique([sedeId, numeroRecibo])
   @@index([sedeId, fechaPago])
   @@index([pacienteId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Seguimiento de interesados
+// ─────────────────────────────────────────────────────────────
+
+// Bitácora de contactos con el interesado (el paciente o su familia). Un
+// paciente queda pendiente en la bandeja de seguimiento mientras tenga una
+// ENTRADA posterior a su última SALIDA con resultado CONTACTADO.
+// La regla vive en seguimiento/seguimiento.ts.
+model Interaccion {
+  id         String               @id @default(cuid())
+  sedeId     String
+  pacienteId String
+  direccion  DireccionInteraccion
+  canal      CanalInteraccion     @default(LLAMADA)
+  fecha      DateTime             @default(now()) // fecha y hora reales del contacto
+  resultado  ResultadoSalida? // solo SALIDA
+  nota       String?
+  autor      String? // nombre del usuario que la registró
+  createdAt  DateTime             @default(now())
+
+  sede     Sede     @relation(fields: [sedeId], references: [id])
+  paciente Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+
+  @@index([sedeId, direccion, fecha])
+  @@index([pacienteId, fecha])
 }

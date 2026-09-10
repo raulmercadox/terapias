@@ -17,6 +17,7 @@ const NAV_USUARIO: NavItem[] = [
 const NAV: NavItem[] = [
   { href: "/", label: "Inicio", icon: "🏠" },
   { href: "/pacientes", label: "Pacientes", icon: "🧒" },
+  { href: "/seguimiento", label: "Seguimiento", icon: "📞" },
   { href: "/citas", label: "Citas / Agenda", icon: "📅" },
   { href: "/sesiones", label: "Sesiones", icon: "📋" },
   { href: "/pagos", label: "Pagos", icon: "💵" },

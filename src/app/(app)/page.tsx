@@ -3,6 +3,7 @@ import { requireUser, requireActiveSede, getSedesForUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
 import { soles } from "@/lib/utils";
+import { contarPendientes } from "./seguimiento/consultas";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -24,8 +25,9 @@ export default async function DashboardPage() {
   // El rol USUARIO no accede al módulo de pacientes.
   const vePacientes = user.rol !== "USUARIO";
 
-  const [pacientes, citasHoy, paquetesActivos, ingresosMes] = await Promise.all([
+  const [pacientes, porContactar, citasHoy, paquetesActivos, ingresosMes] = await Promise.all([
     prisma.paciente.count({ where: { sedeId, estado: "ACTIVO" } }),
+    vePacientes ? contarPendientes(sedeId) : 0,
     prisma.cita.count({
       where: { sedeId, fecha: { gte: hoyInicio, lte: hoyFin } },
     }),
@@ -40,7 +42,10 @@ export default async function DashboardPage() {
 
   const cards = [
     ...(vePacientes
-      ? [{ label: "Pacientes activos", value: pacientes, href: "/pacientes", icon: "🧒" }]
+      ? [
+          { label: "Pacientes activos", value: pacientes, href: "/pacientes", icon: "🧒" },
+          { label: "Interesados por contactar", value: porContactar, href: "/seguimiento", icon: "📞" },
+        ]
       : []),
     { label: "Citas de hoy", value: citasHoy, href: "/citas", icon: "📅" },
     { label: "Paquetes activos", value: paquetesActivos, href: "/sesiones", icon: "📋" },

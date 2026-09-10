@@ -11,6 +11,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { FormState } from "./actions";
+import { CANALES, CANAL_LABEL } from "../seguimiento/seguimiento";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 
@@ -204,6 +205,38 @@ export function PacienteForm({
             <Field label="Correo del apoderado">
               <Input type="email" name="apo_correo" />
               <Err errors={fe} name="apo_correo" />
+            </Field>
+          </div>
+        </Card>
+      )}
+
+      {modo === "crear" && (
+        <Card>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Primer contacto (opcional)
+          </h2>
+          <p className="mb-4 text-xs text-slate-500">
+            Si es un interesado que acaba de llamar, escribir o venir al
+            centro, registra ese contacto: aparecerá en la bandeja de
+            Seguimiento hasta que alguien lo contacte.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="¿Cómo nos contactó?">
+              <Select name="pc_canal" defaultValue="">
+                <option value="">— No registrar —</option>
+                {CANALES.map((c) => (
+                  <option key={c} value={c}>
+                    {CANAL_LABEL[c]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Nota" className="sm:col-span-2">
+              <Textarea
+                name="pc_nota"
+                className="min-h-16"
+                placeholder="Qué pidió, qué se le informó…"
+              />
             </Field>
           </div>
         </Card>
