@@ -10,12 +10,13 @@ export function LoginForm() {
     estado: error,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<string | undefined>(authenticate, undefined, {
     fallo: (e) => Boolean(e),
   });
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       <Field label="Correo" required>
         <Input
           name="email"

@@ -17,10 +17,11 @@ export function SedeForm({ sede }: { sede?: SedeInicial }) {
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(guardarSede, undefined);
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       {sede && <input type="hidden" name="id" value={sede.id} />}
 
       <Field label="Nombre" required>

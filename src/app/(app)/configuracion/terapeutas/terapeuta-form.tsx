@@ -27,10 +27,11 @@ export function TerapeutaForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(guardarTerapeuta, undefined);
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       {terapeuta && <input type="hidden" name="id" value={terapeuta.id} />}
 
       <Field label="Sede" required>

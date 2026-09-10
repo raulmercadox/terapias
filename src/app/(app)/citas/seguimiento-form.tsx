@@ -26,6 +26,7 @@ export function SeguimientoForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(registrarSeguimiento, undefined);
 
   const [nuevaObservacion, setNuevaObservacion] = useState("");
@@ -40,7 +41,7 @@ export function SeguimientoForm({
   }, [pending, state]);
 
   return (
-    <form {...formProps} className="space-y-5">
+    <form key={formKey} {...formProps} className="space-y-5">
       <input type="hidden" name="id" value={citaId} />
 
       <Field label="Terapia realizada">

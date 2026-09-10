@@ -32,6 +32,7 @@ function Formulario({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(action, {}, { alExito: onCerrar });
   const [direccion, setDireccion] = useState<Direccion>(
     soloSalida ? "SALIDA" : "ENTRADA",
@@ -43,6 +44,7 @@ function Formulario({
 
   return (
     <form
+      key={formKey}
       {...formProps}
       className="w-full space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-4"
     >

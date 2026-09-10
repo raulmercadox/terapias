@@ -13,10 +13,11 @@ export function FeriadoForm({ sedeId }: { sedeId: string }) {
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(crearFeriado, undefined);
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sedeId} />
 
       <Field label="Fecha" required>
@@ -44,10 +45,11 @@ export function EliminarFeriadoBtn({ id }: { id: string }) {
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(eliminarFeriado, undefined);
 
   return (
-    <form {...formProps} className="inline">
+    <form key={formKey} {...formProps} className="inline">
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="danger" disabled={pending}>
         {pending ? "…" : "Eliminar"}

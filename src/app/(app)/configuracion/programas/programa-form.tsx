@@ -26,10 +26,11 @@ export function ProgramaForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(guardarPrograma, undefined);
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       {programa && <input type="hidden" name="id" value={programa.id} />}
 
       <Field label="Sede" required>

@@ -32,6 +32,7 @@ export function UsuarioForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(action, undefined);
 
   const [rol, setRol] = useState<Rol>(usuario?.rol ?? "USUARIO");
@@ -52,7 +53,7 @@ export function UsuarioForm({
   }
 
   return (
-    <form {...formProps} className="space-y-5">
+    <form key={formKey} {...formProps} className="space-y-5">
       {editando && <input type="hidden" name="id" value={usuario!.id} />}
 
       <div className="grid gap-4 sm:grid-cols-2">

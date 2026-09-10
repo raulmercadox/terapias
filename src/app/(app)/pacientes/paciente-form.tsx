@@ -57,12 +57,13 @@ export function PacienteForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(action, {});
   const fe = state.fieldErrors;
   const v = inicial ?? {};
 
   return (
-    <form {...formProps} className="space-y-6">
+    <form key={formKey} {...formProps} className="space-y-6">
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}

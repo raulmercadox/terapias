@@ -103,7 +103,7 @@ export default function SesionFila({
         <tr className="bg-slate-50">
           <Td className="!p-0" />
           <td colSpan={6} className="px-4 py-4">
-            <form {...asis.formProps} className="space-y-3">
+            <form key={asis.formKey} {...asis.formProps} className="space-y-3">
               <input type="hidden" name="citaId" value={cita.id} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Asistencia" required>
@@ -161,7 +161,7 @@ export default function SesionFila({
         <tr className="bg-slate-50">
           <Td className="!p-0" />
           <td colSpan={6} className="px-4 py-4">
-            <form {...repr.formProps} className="space-y-3">
+            <form key={repr.formKey} {...repr.formProps} className="space-y-3">
               <input type="hidden" name="citaId" value={cita.id} />
               <div className="grid gap-3 sm:grid-cols-4">
                 <Field label="Fecha" required>

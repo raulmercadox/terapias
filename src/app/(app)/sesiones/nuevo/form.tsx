@@ -116,6 +116,7 @@ export default function NuevoPaqueteForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<ActionState>(crearPaquete, initial);
 
   const [pacienteId, setPacienteId] = useState("");
@@ -303,7 +304,7 @@ export default function NuevoPaqueteForm({
   const finSemana = sumarDias(lunesSemana, 5); // sáb
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sedeId} />
       <input type="hidden" name="sesiones" value={sesionesJSON} />
 

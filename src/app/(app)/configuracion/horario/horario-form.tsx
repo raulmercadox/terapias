@@ -38,6 +38,7 @@ export function HorarioForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(guardarHorarioLaboral, undefined);
 
   // Lista de intervalos editable; el "inicial" se elige entre sus valores.
@@ -52,7 +53,7 @@ export function HorarioForm({
     : String(opciones[0] ?? "");
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sede.id} />
 
       <div className="grid grid-cols-2 gap-4">

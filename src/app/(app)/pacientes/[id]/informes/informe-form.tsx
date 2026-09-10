@@ -190,13 +190,14 @@ export function InformeForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
     valorEn,
   } = useFormReintento<FormState>(action, {});
   const v = inicial ?? {};
   const secciones = v.secciones ?? seccionesIniciales();
 
   return (
-    <form {...formProps} className="space-y-6">
+    <form key={formKey} {...formProps} className="space-y-6">
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}

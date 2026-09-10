@@ -35,13 +35,14 @@ export function CitaForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
     valor,
   } = useFormReintento<FormState>(action, undefined);
 
   const cancelHref = editando ? `/citas/${inicial!.id}` : "/citas";
 
   return (
-    <form {...formProps} className="space-y-4">
+    <form key={formKey} {...formProps} className="space-y-4">
       {editando && <input type="hidden" name="id" value={inicial!.id} />}
 
       <Field label="Paciente" required>

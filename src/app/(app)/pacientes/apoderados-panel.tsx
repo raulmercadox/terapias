@@ -105,6 +105,7 @@ function AgregarForm({ pacienteId }: { pacienteId: string }) {
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(action, {});
   const [abierto, setAbierto] = useState(false);
 
@@ -126,7 +127,7 @@ function AgregarForm({ pacienteId }: { pacienteId: string }) {
           {state.error}
         </p>
       )}
-      <form {...formProps} className="space-y-3">
+      <form key={formKey} {...formProps} className="space-y-3">
         <ApoderadoFields fe={state.fieldErrors} />
         <div className="flex gap-2">
           <Button type="submit" disabled={pending}>
@@ -157,6 +158,7 @@ function EditarForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<FormState>(action, {});
 
   return (
@@ -169,7 +171,7 @@ function EditarForm({
           {state.error}
         </p>
       )}
-      <form {...formProps} className="space-y-3">
+      <form key={formKey} {...formProps} className="space-y-3">
         <ApoderadoFields inicial={apoderado} fe={state.fieldErrors} />
         <div className="flex gap-2">
           <Button type="submit" disabled={pending}>

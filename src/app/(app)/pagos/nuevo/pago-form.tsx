@@ -60,6 +60,7 @@ export function PagoForm({
     estado: state,
     pendiente: pending,
     formProps,
+    formKey,
   } = useFormReintento<RegistrarPagoState>(registrarPago, initialState);
   const [pacienteId, setPacienteId] = useState("");
   const [paqueteId, setPaqueteId] = useState("");
@@ -87,7 +88,7 @@ export function PagoForm({
       : 0;
 
   return (
-    <form {...formProps} className="space-y-5">
+    <form key={formKey} {...formProps} className="space-y-5">
       <Card className="space-y-4">
         {state.error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

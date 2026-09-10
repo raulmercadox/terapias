@@ -36,6 +36,7 @@ export default function PaqueteAcciones({
     estado: editState,
     pendiente: editPending,
     formProps: editFormProps,
+    formKey: editFormKey,
   } = useFormReintento<ActionState>(actualizarPaquete, initial);
   const [estadoState, estadoAction, estadoPending] = useActionState(
     cambiarEstadoPaquete,
@@ -67,7 +68,7 @@ export default function PaqueteAcciones({
           Editar datos
         </Button>
       ) : (
-        <form {...editFormProps} className="space-y-3">
+        <form key={editFormKey} {...editFormProps} className="space-y-3">
           <input type="hidden" name="paqueteId" value={paqueteId} />
           <Field label="Precio (S/)" required>
             <Input

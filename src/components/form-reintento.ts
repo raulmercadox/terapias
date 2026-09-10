@@ -131,8 +131,14 @@ export function useFormReintento<S>(
   return {
     estado: estado as S,
     pendiente,
-    /** Props del `<form>`: acción, remonte por intento y repoblado de campos. */
-    formProps: { action: enviar, key: intento, ref },
+    /** Props del `<form>`: acción y repoblado de campos. */
+    formProps: { action: enviar, ref },
+    /**
+     * Key del `<form>`, cambia en cada intento fallido para remontarlo. Va
+     * aparte de `formProps` porque React no acepta `key` dentro de un spread:
+     * `<form key={formKey} {...formProps}>`.
+     */
+    formKey: intento,
     /**
      * Hay un intento fallido en curso. El estado de la acción conserva su
      * `error` para siempre, así que sirve para no mostrar uno ya resuelto.
