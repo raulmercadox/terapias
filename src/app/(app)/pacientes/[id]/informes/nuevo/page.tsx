@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
-import { nombreCompleto, edad, fecha, fechaInput } from "@/lib/utils";
+import { nombreCompleto, edad, fecha, hoyLima } from "@/lib/utils";
 import { normalizarSecciones, seccionesSinValores } from "../informe";
 import { InformeForm } from "../informe-form";
 import { crearInforme } from "../actions";
@@ -70,7 +70,7 @@ export default async function NuevoInformePage({
             nombre: `${t.nombres} ${t.apellidos}`.trim(),
           }))}
           inicial={{
-            fecha: fechaInput(new Date()),
+            fecha: hoyLima(),
             secciones: anterior
               ? seccionesSinValores(normalizarSecciones(anterior.secciones))
               : undefined,

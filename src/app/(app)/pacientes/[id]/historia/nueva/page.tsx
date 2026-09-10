@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
-import { nombreCompleto, fechaInput } from "@/lib/utils";
+import { nombreCompleto, hoyLima } from "@/lib/utils";
 import { HistoriaForm } from "../historia-form";
 import { crearHistoria } from "../actions";
 
@@ -44,7 +44,7 @@ export default async function NuevaHistoriaPage({
       <div className="max-w-4xl">
         <HistoriaForm
           action={accion}
-          inicial={{ fecha: fechaInput(new Date()) }}
+          inicial={{ fecha: hoyLima() }}
           cancelarHref={`/pacientes/${paciente.id}`}
         />
       </div>

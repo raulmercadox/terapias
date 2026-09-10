@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
-import { nombreCompleto, edad, fechaInput } from "@/lib/utils";
+import { nombreCompleto, edad, hoyLima } from "@/lib/utils";
 import { EvaluacionForm } from "../evaluacion-form";
 import { crearEvaluacion } from "../actions";
 
@@ -51,7 +51,7 @@ export default async function NuevaEvaluacionPage({
             nombre: `${t.nombres} ${t.apellidos}`.trim(),
           }))}
           inicial={{
-            fecha: fechaInput(new Date()),
+            fecha: hoyLima(),
             // Precarga el Dx registrado en la ficha del paciente, si existe.
             diagnostico: paciente.diagnostico,
           }}

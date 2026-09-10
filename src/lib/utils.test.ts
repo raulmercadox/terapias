@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fecha, fechaInput } from "./utils";
+import { fecha, fechaInput, hoyLima } from "./utils";
 
 // Regresión del bug de reprogramar sesiones:
 //
@@ -53,6 +53,18 @@ test("fecha()/fechaInput() manejan valores nulos o inválidos", () => {
   assert.equal(fechaInput(null), "");
   assert.equal(fechaInput(undefined), "");
   assert.equal(fechaInput("no-es-fecha"), "");
+});
+
+// Regresión: "Nueva ficha de evaluación" precargaba la fecha con
+// fechaInput(new Date()), que lee el día en UTC. A las 21:30 de Lima del 10/09
+// en UTC ya es el 11, así que proponía la fecha de mañana.
+test("hoyLima() da el día de Perú aunque en UTC ya sea mañana", () => {
+  const nocheEnLima = new Date("2026-09-11T02:30:00.000Z"); // 10/09 21:30 Lima
+  assert.equal(hoyLima(nocheEnLima), "2026-09-10");
+  assert.equal(fechaInput(nocheEnLima), "2026-09-11"); // el bug
+  assert.equal(hoyLima(new Date("2026-09-10T15:00:00.000Z")), "2026-09-10");
+  // Justo después de la medianoche de Lima ya es el día siguiente.
+  assert.equal(hoyLima(new Date("2026-09-11T05:00:00.000Z")), "2026-09-11");
 });
 
 /** Medianoche del día (y,m,d) en America/New_York, como instancia UTC. */

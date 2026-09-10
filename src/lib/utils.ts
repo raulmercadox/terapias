@@ -46,6 +46,23 @@ export function fechaInput(value: Date | string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
 }
 
+// en-CA formatea como "YYYY-MM-DD", justo lo que espera un <input type="date">.
+const HOY_LIMA_FMT = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "America/Lima",
+});
+
+/**
+ * Día de hoy en Perú como "YYYY-MM-DD", para precargar un <input type="date">.
+ * No usar `fechaInput(new Date())` para esto: lee el día en UTC, y desde las
+ * 19:00 de Lima en UTC ya es mañana.
+ */
+export function hoyLima(ahora: Date = new Date()): string {
+  return HOY_LIMA_FMT.format(ahora);
+}
+
 const DATETIME_FMT = new Intl.DateTimeFormat("es-PE", {
   day: "2-digit",
   month: "2-digit",
