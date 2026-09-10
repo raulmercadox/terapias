@@ -16,6 +16,8 @@ import {
   normalizarResultados,
   type Resultados,
 } from "./ficha";
+import { fechaInput } from "@/lib/utils";
+import { fechaEntradaEvaluacion } from "../../../seguimiento/seguimiento";
 
 export type FormState = {
   error?: string;
@@ -211,12 +213,35 @@ export async function crearEvaluacion(
 
   const resultados = parseResultados(formData, d.modalidadLenguaje);
 
-  const evaluacion = await prisma.evaluacion.create({
-    data: {
-      sedeId: paciente.sedeId,
-      pacienteId,
-      ...evaluacionData(d, resultados),
-    },
+  const evaluacion = await prisma.$transaction(async (tx) => {
+    const ev = await tx.evaluacion.create({
+      data: {
+        sedeId: paciente.sedeId,
+        pacienteId,
+        ...evaluacionData(d, resultados),
+      },
+    });
+
+    // Quien se evalúa sin tener paquete vino a conocer el centro: entra a la
+    // bandeja de seguimiento hasta que alguien lo contacte. La reevaluación
+    // de un paciente que ya lleva terapia no. Un paquete anulado no cuenta.
+    const paquetes = await tx.paquete.count({
+      where: { pacienteId, estado: { not: "ANULADO" } },
+    });
+    if (paquetes === 0) {
+      await tx.interaccion.create({
+        data: {
+          sedeId: paciente.sedeId,
+          pacienteId,
+          evaluacionId: ev.id,
+          direccion: "ENTRADA",
+          canal: "EVALUACION",
+          fecha: fechaEntradaEvaluacion(d.fecha, new Date()),
+          autor: user.nombre ?? null,
+        },
+      });
+    }
+    return ev;
   });
 
   if (d.aplicarPrograma && d.programaRecomendado) {
@@ -227,6 +252,8 @@ export async function crearEvaluacion(
   }
 
   revalidatePath(`/pacientes/${pacienteId}`);
+  revalidatePath("/seguimiento");
+  revalidatePath("/");
   redirect(`/pacientes/${pacienteId}/evaluaciones/${evaluacion.id}`);
 }
 
@@ -240,7 +267,7 @@ export async function actualizarEvaluacion(
 
   const existente = await prisma.evaluacion.findUnique({
     where: { id: evaluacionId },
-    select: { sedeId: true, pacienteId: true },
+    select: { sedeId: true, pacienteId: true, fecha: true },
   });
   if (!existente) return { error: "La evaluación no existe." };
   assertSedeAccess(user, existente.sedeId);
@@ -260,6 +287,15 @@ export async function actualizarEvaluacion(
     where: { id: evaluacionId },
     data: evaluacionData(d, resultados),
   });
+
+  // Si se corrige el día de la ficha, su entrada de seguimiento lo acompaña.
+  if (fechaInput(existente.fecha) !== d.fecha) {
+    await prisma.interaccion.updateMany({
+      where: { evaluacionId },
+      data: { fecha: fechaEntradaEvaluacion(d.fecha, new Date()) },
+    });
+    revalidatePath("/seguimiento");
+  }
 
   if (d.aplicarPrograma && d.programaRecomendado) {
     await prisma.paciente.update({

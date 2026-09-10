@@ -5,6 +5,7 @@ import {
   aInputLima,
   parseInputLima,
   diasDesde,
+  fechaEntradaEvaluacion,
   type InteraccionBase,
 } from "./seguimiento";
 
@@ -104,6 +105,21 @@ test("datetime-local se interpreta y se precarga en hora de Lima", () => {
   assert.equal(aInputLima(new Date("2026-09-11T02:30:00Z")), "2026-09-10T21:30");
   assert.equal(parseInputLima("2026-09-10"), null);
   assert.equal(parseInputLima(""), null);
+});
+
+test("la entrada de una evaluación toma la fecha de la ficha", () => {
+  // 10/09/2026 15:00 en Lima.
+  const ahora = new Date("2026-09-10T20:00:00Z");
+  // Ficha de hoy: la hora real del registro.
+  assert.equal(fechaEntradaEvaluacion("2026-09-10", ahora), ahora);
+  // Ficha registrada con atraso: mediodía de Lima de ese día.
+  assert.equal(
+    fechaEntradaEvaluacion("2026-09-03", ahora).toISOString(),
+    "2026-09-03T17:00:00.000Z",
+  );
+  // Fecha futura o inválida: nunca queda en el futuro.
+  assert.equal(fechaEntradaEvaluacion("2026-09-15", ahora), ahora);
+  assert.equal(fechaEntradaEvaluacion("", ahora), ahora);
 });
 
 test("diasDesde cuenta días calendario de Lima, no bloques de 24 h", () => {

@@ -208,6 +208,14 @@ export default async function PacienteDetallePage({
                         <span className="text-sm text-slate-700">
                           {CANAL_LABEL[i.canal]}
                         </span>
+                        {i.evaluacionId && (
+                          <Link
+                            href={`/pacientes/${paciente.id}/evaluaciones/${i.evaluacionId}`}
+                            className="text-xs font-medium text-sky-700 hover:underline"
+                          >
+                            Ver ficha
+                          </Link>
+                        )}
                         <span className="text-xs text-slate-500">
                           {fechaHora(i.fecha)}
                           {i.autor ? ` · ${i.autor}` : ""}

@@ -291,9 +291,10 @@ model Evaluacion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sede      Sede       @relation(fields: [sedeId], references: [id])
-  paciente  Paciente   @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
-  evaluador Terapeuta? @relation(fields: [evaluadorId], references: [id])
+  sede        Sede         @relation(fields: [sedeId], references: [id])
+  paciente    Paciente     @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  evaluador   Terapeuta?   @relation(fields: [evaluadorId], references: [id])
+  interaccion Interaccion?
 
   @@index([pacienteId, fecha])
   @@index([sedeId])
@@ -583,10 +584,14 @@ model Interaccion {
   resultado  ResultadoSalida? // solo SALIDA
   nota       String?
   autor      String? // nombre del usuario que la registró
+  // Entrada creada sola al registrar la ficha de evaluación de un paciente
+  // sin paquete. Se borra con la evaluación.
+  evaluacionId String?              @unique
   createdAt  DateTime             @default(now())
 
-  sede     Sede     @relation(fields: [sedeId], references: [id])
-  paciente Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  sede       Sede        @relation(fields: [sedeId], references: [id])
+  paciente   Paciente    @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  evaluacion Evaluacion? @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
 
   @@index([sedeId, direccion, fecha])
   @@index([pacienteId, fecha])

@@ -137,6 +137,19 @@ export function parseInputLima(value: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Fecha y hora de la entrada que genera una ficha de evaluación, cuya fecha
+ * es solo el día ("YYYY-MM-DD"). Si es de hoy, la hora real del registro; si
+ * se registra con atraso, el mediodía de Lima de ese día, para que la bandeja
+ * la ordene por cuándo vino el paciente. Nunca queda en el futuro.
+ */
+export function fechaEntradaEvaluacion(dia: string, ahora: Date): Date {
+  if (dia === aInputLima(ahora).slice(0, 10)) return ahora;
+  const mediodia = parseInputLima(`${dia}T12:00`);
+  if (!mediodia || mediodia > ahora) return ahora;
+  return mediodia;
+}
+
 /** Días calendario (en Lima) entre `desde` y `ahora`: hoy = 0, ayer = 1. */
 export function diasDesde(desde: Date, ahora: Date): number {
   const a = Date.parse(partesLima(desde).dia);
