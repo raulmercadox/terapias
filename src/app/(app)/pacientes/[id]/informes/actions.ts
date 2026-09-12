@@ -110,7 +110,7 @@ export async function crearInforme(
     select: { sedeId: true },
   });
   if (!paciente) return { error: "El paciente no existe." };
-  assertSedeAccess(user, paciente.sedeId);
+  await assertSedeAccess(user, paciente.sedeId);
 
   const parsed = parseCampos(formData);
   if (!parsed.success) {
@@ -150,7 +150,7 @@ export async function actualizarInforme(
     select: { sedeId: true, pacienteId: true },
   });
   if (!existente) return { error: "El informe no existe." };
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   const parsed = parseCampos(formData);
   if (!parsed.success) {
@@ -187,7 +187,7 @@ export async function eliminarInforme(informeId: string) {
     select: { sedeId: true, pacienteId: true },
   });
   if (!existente) throw new Error("El informe no existe.");
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   await prisma.informeAvance.delete({ where: { id: informeId } });
 

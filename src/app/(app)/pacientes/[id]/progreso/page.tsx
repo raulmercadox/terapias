@@ -80,7 +80,7 @@ export default async function ProgresoPacientePage({
       fechaNacimiento: true,
     },
   });
-  if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+  if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
   const informes = await prisma.informeAvance.findMany({
     where: { pacienteId: paciente.id },

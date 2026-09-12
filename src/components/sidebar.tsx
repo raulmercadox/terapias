@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { Rol } from "@prisma/client";
 import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string; icon: string };
-type Rol = "ADMINISTRADOR" | "COORDINADOR" | "USUARIO";
 
 // El rol USUARIO solo ve Inicio, Citas/Agenda y Sesiones.
 const NAV_USUARIO: NavItem[] = [

@@ -1,18 +1,19 @@
 # Base de datos PostgreSQL para desarrollo local.
 # Uso: docker compose up -d
+# Puerto 5434 para convivir con geniusdb (5433) y sistema_comercial (5432).
 services:
   db:
     image: postgres:16-alpine
-    container_name: geniusdb
+    container_name: terapiasdb
     restart: unless-stopped
     environment:
-      POSTGRES_USER: genius
-      POSTGRES_PASSWORD: genius
-      POSTGRES_DB: geniusschool
+      POSTGRES_USER: terapias
+      POSTGRES_PASSWORD: terapias
+      POSTGRES_DB: terapias
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
-      - genius_pgdata:/var/lib/postgresql/data
+      - terapias_pgdata:/var/lib/postgresql/data
 
 volumes:
-  genius_pgdata:
+  terapias_pgdata:

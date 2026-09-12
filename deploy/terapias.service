@@ -1,0 +1,17 @@
+[Unit]
+Description=Terapias (Next.js)
+# En el VPS PostgreSQL es el paquete PGDG: el servicio se llama postgresql-16.
+After=network.target postgresql-16.service
+Wants=postgresql-16.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/terapias
+Environment=NODE_ENV=production
+# 3100: el 3000 ya lo usa sistema_comercial en el VPS compartido.
+ExecStart=/opt/terapias/node_modules/.bin/next start -H 127.0.0.1 -p 3100
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

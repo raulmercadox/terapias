@@ -6,6 +6,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { USUARIO_MSG, USUARIO_RE } from "@/lib/formatos";
 
 /* ── Tipo de estado para useActionState ────────────────── */
 
@@ -24,6 +25,11 @@ function firstError(err: z.ZodError): string {
   return err.issues[0]?.message ?? "Datos inválidos.";
 }
 
+/** La sede, solo si pertenece al centro (si no, null: como si no existiera). */
+function sedeDelCentro(centroId: string, sedeId: string) {
+  return prisma.sede.findFirst({ where: { id: sedeId, centroId } });
+}
+
 /* ════════════════════════════════════════════════════════
  * USUARIOS
  * ════════════════════════════════════════════════════════ */
@@ -32,7 +38,8 @@ const rolEnum = z.enum(["ADMINISTRADOR", "COORDINADOR", "USUARIO"]);
 
 const usuarioBaseSchema = z.object({
   nombre: z.string().trim().min(1, "El nombre es obligatorio."),
-  email: z.email("Correo electrónico inválido."),
+  usuario: z.string().regex(USUARIO_RE, USUARIO_MSG),
+  email: z.union([z.literal(""), z.email("Correo electrónico inválido.")]),
   rol: rolEnum,
   activo: z.boolean(),
   sedeIds: z.array(z.string()).default([]),
@@ -57,9 +64,20 @@ function validarSedesPorRol(
   return null;
 }
 
+/** ¿Todas las sedes asignadas pertenecen al centro? */
+async function sedesSonDelCentro(centroId: string, sedeIds: string[]) {
+  const unicas = new Set(sedeIds);
+  if (unicas.size === 0) return true;
+  const n = await prisma.sede.count({
+    where: { id: { in: [...unicas] }, centroId },
+  });
+  return n === unicas.size;
+}
+
 function parseUsuarioForm(formData: FormData) {
   return {
     nombre: String(formData.get("nombre") ?? ""),
+    usuario: String(formData.get("usuario") ?? "").trim().toLowerCase(),
     email: String(formData.get("email") ?? "").trim().toLowerCase(),
     rol: String(formData.get("rol") ?? "USUARIO"),
     activo: formData.get("activo") === "on",
@@ -72,31 +90,37 @@ export async function crearUsuario(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const raw = parseUsuarioForm(formData);
   const parsed = usuarioBaseSchema.safeParse(raw);
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { nombre, email, rol, activo } = parsed.data;
+  const { nombre, usuario, rol, activo } = parsed.data;
+  const email = parsed.data.email || null;
   // Admin no requiere sedes; para los demás se aplican las reglas.
   const sedeIds = rol === "ADMINISTRADOR" ? [] : parsed.data.sedeIds;
 
   const reglaSedes = validarSedesPorRol(rol, sedeIds);
   if (reglaSedes) return { error: reglaSedes };
+  if (!(await sedesSonDelCentro(centroId, sedeIds))) {
+    return { error: "Alguna de las sedes seleccionadas no existe." };
+  }
 
   if (raw.password.length < 6) {
     return { error: "La contraseña debe tener al menos 6 caracteres." };
   }
 
-  const existente = await prisma.user.findUnique({ where: { email } });
-  if (existente) return { error: "Ya existe un usuario con ese correo." };
+  const existente = await prisma.user.findFirst({ where: { centroId, usuario } });
+  if (existente) return { error: "Ya existe un usuario con ese nombre de usuario." };
 
   const passwordHash = await bcrypt.hash(raw.password, 10);
 
   await prisma.user.create({
     data: {
+      centroId,
       nombre,
+      usuario,
       email,
       passwordHash,
       rol,
@@ -124,14 +148,19 @@ export async function actualizarUsuario(
   const parsed = usuarioBaseSchema.safeParse(raw);
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { nombre, email, rol, activo } = parsed.data;
+  const { nombre, usuario, rol, activo } = parsed.data;
+  const email = parsed.data.email || null;
   const sedeIds = rol === "ADMINISTRADOR" ? [] : parsed.data.sedeIds;
+  const { centroId } = actual;
 
   const reglaSedes = validarSedesPorRol(rol, sedeIds);
   if (reglaSedes) return { error: reglaSedes };
+  if (!(await sedesSonDelCentro(centroId, sedeIds))) {
+    return { error: "Alguna de las sedes seleccionadas no existe." };
+  }
 
-  const usuario = await prisma.user.findUnique({ where: { id } });
-  if (!usuario) return { error: "Usuario no encontrado." };
+  const registro = await prisma.user.findFirst({ where: { id, centroId } });
+  if (!registro) return { error: "Usuario no encontrado." };
 
   // Un admin no puede desactivarse a sí mismo.
   if (id === actual.id && !activo) {
@@ -142,10 +171,10 @@ export async function actualizarUsuario(
     return { error: "No puedes cambiar tu propio rol de administrador." };
   }
 
-  // Email único (excluyendo a sí mismo).
-  const otro = await prisma.user.findUnique({ where: { email } });
+  // Usuario único dentro del centro (excluyendo a sí mismo).
+  const otro = await prisma.user.findFirst({ where: { centroId, usuario } });
   if (otro && otro.id !== id) {
-    return { error: "Ya existe otro usuario con ese correo." };
+    return { error: "Ya existe otro usuario con ese nombre de usuario." };
   }
 
   const passwordPlano = raw.password.trim();
@@ -161,6 +190,7 @@ export async function actualizarUsuario(
       where: { id },
       data: {
         nombre,
+        usuario,
         email,
         rol,
         activo,
@@ -204,7 +234,7 @@ export async function guardarSede(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
   const parsed = sedeSchema.safeParse(parseSedeForm(formData));
@@ -212,20 +242,23 @@ export async function guardarSede(
 
   const { nombre, direccion, telefono, activo } = parsed.data;
 
-  // Nombre único (excluyendo la propia sede al editar).
-  const existente = await prisma.sede.findUnique({ where: { nombre } });
+  // Nombre único en el centro (excluyendo la propia sede al editar).
+  const existente = await prisma.sede.findFirst({ where: { centroId, nombre } });
   if (existente && existente.id !== id) {
     return { error: "Ya existe una sede con ese nombre." };
   }
 
   if (id) {
+    if (!(await sedeDelCentro(centroId, id))) {
+      return { error: "Sede no encontrada." };
+    }
     await prisma.sede.update({
       where: { id },
       data: { nombre, direccion, telefono, activo },
     });
   } else {
     await prisma.sede.create({
-      data: { nombre, direccion, telefono, activo },
+      data: { centroId, nombre, direccion, telefono, activo },
     });
   }
 
@@ -261,7 +294,7 @@ export async function guardarTerapeuta(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
   const parsed = terapeutaSchema.safeParse(parseTerapeutaForm(formData));
@@ -270,10 +303,16 @@ export async function guardarTerapeuta(
   const { sedeId, nombres, apellidos, especialidad, telefono, activo } =
     parsed.data;
 
-  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  const sede = await sedeDelCentro(centroId, sedeId);
   if (!sede) return { error: "La sede seleccionada no existe." };
 
   if (id) {
+    const actual = await prisma.terapeuta.findFirst({
+      where: { id, sede: { centroId } },
+      select: { id: true },
+    });
+    if (!actual) return { error: "Terapeuta no encontrado." };
+
     await prisma.terapeuta.update({
       where: { id },
       data: { sedeId, nombres, apellidos, especialidad, telefono, activo },
@@ -314,7 +353,7 @@ export async function guardarPrograma(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
   const parsed = programaSchema.safeParse({
@@ -328,8 +367,16 @@ export async function guardarPrograma(
 
   const { sedeId, nombre, duracionMin, maxPacientes, activo } = parsed.data;
 
-  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  const sede = await sedeDelCentro(centroId, sedeId);
   if (!sede) return { error: "La sede seleccionada no existe." };
+
+  if (id) {
+    const actual = await prisma.programaTerapia.findFirst({
+      where: { id, sede: { centroId } },
+      select: { id: true },
+    });
+    if (!actual) return { error: "Programa no encontrado." };
+  }
 
   // Nombre único por sede (excluyendo el propio al editar).
   const existente = await prisma.programaTerapia.findFirst({
@@ -429,7 +476,7 @@ export async function guardarHorarioLaboral(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const parsed = horarioSchema.safeParse({
     sedeId: String(formData.get("sedeId") ?? ""),
@@ -454,7 +501,7 @@ export async function guardarHorarioLaboral(
     refrigerioFin,
   } = parsed.data;
 
-  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  const sede = await sedeDelCentro(centroId, sedeId);
   if (!sede) return { error: "La sede seleccionada no existe." };
 
   // Orden ascendente y sin duplicados.
@@ -501,7 +548,7 @@ export async function crearFeriado(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const parsed = feriadoSchema.safeParse({
     sedeId: String(formData.get("sedeId") ?? ""),
@@ -512,7 +559,7 @@ export async function crearFeriado(
 
   const { sedeId, fecha, descripcion } = parsed.data;
 
-  const sede = await prisma.sede.findUnique({ where: { id: sedeId } });
+  const sede = await sedeDelCentro(centroId, sedeId);
   if (!sede) return { error: "La sede seleccionada no existe." };
 
   const existente = await prisma.feriado.findUnique({
@@ -533,13 +580,13 @@ export async function eliminarFeriado(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireAdmin();
+  const { centroId } = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Feriado no encontrado." };
 
-  const feriado = await prisma.feriado.findUnique({
-    where: { id },
+  const feriado = await prisma.feriado.findFirst({
+    where: { id, sede: { centroId } },
     select: { sedeId: true },
   });
   if (!feriado) return { error: "Feriado no encontrado." };

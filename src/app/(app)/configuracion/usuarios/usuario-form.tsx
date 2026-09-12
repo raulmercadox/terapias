@@ -11,7 +11,8 @@ type SedeOpcion = { id: string; nombre: string };
 type UsuarioInicial = {
   id: string;
   nombre: string;
-  email: string;
+  usuario: string;
+  email: string | null;
   rol: Rol;
   activo: boolean;
   sedeIds: string[];
@@ -60,17 +61,26 @@ export function UsuarioForm({
         <Field label="Nombre completo" required>
           <Input name="nombre" defaultValue={usuario?.nombre} required />
         </Field>
-        <Field label="Correo electrónico" required>
+        <Field label="Usuario" required>
           <Input
-            name="email"
-            type="email"
-            defaultValue={usuario?.email}
+            name="usuario"
+            defaultValue={usuario?.usuario}
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="p. ej. maria.lopez"
             required
           />
         </Field>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Correo electrónico">
+          <Input
+            name="email"
+            type="email"
+            defaultValue={usuario?.email ?? ""}
+          />
+        </Field>
         <Field label="Contraseña" required={!editando}>
           <Input
             name="password"
@@ -82,6 +92,9 @@ export function UsuarioForm({
             required={!editando}
           />
         </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Rol" required>
           <Select
             name="rol"

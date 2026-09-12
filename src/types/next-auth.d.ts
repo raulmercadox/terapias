@@ -6,14 +6,18 @@ declare module "next-auth" {
     user: {
       id: string;
       nombre: string;
+      usuario: string;
       rol: Rol;
+      centroId: string | null; // null solo para SUPERADMIN
       sedeIds: string[];
     } & DefaultSession["user"];
   }
 
   interface User {
     nombre?: string;
+    usuario?: string;
     rol?: Rol;
+    centroId?: string | null;
     sedeIds?: string[];
   }
 }
@@ -23,5 +27,7 @@ declare module "next-auth/jwt" {
     rol?: Rol;
     sedeIds?: string[];
     nombre?: string;
+    usuario?: string;
+    centroId?: string | null;
   }
 }

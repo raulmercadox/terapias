@@ -26,7 +26,7 @@ export default async function NuevaHistoriaPage({
       historiaClinica: { select: { id: true } },
     },
   });
-  if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+  if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
   // La historia clínica es única: si ya existe, se edita en su lugar.
   if (paciente.historiaClinica) {

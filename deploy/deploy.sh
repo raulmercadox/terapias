@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 #
-# Despliegue de B-Genius al VPS.
+# Despliegue de Terapias al VPS.
 #
-#   ./deploy/deploy.sh [--dry-run] [--yes] [--migrate] [--skip-build]
+#   SSH_HOST=root@<IP-del-VPS> ./deploy/deploy.sh [--dry-run] [--yes] [--migrate] [--skip-build]
 #
 # El servidor NO es un clon de git: se sincroniza el código fuente por rsync y
 # el build se hace allá. Ver deploy/README.md.
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-root@2.25.162.59}"
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
-APP_DIR="${APP_DIR:-/opt/genius}"
-BACKUP_DIR="${BACKUP_DIR:-/opt/genius-backups}"
-SERVICE="${SERVICE:-genius}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/login}"
+# Sin valor por defecto a propósito: este repo nació como copia de otro
+# proyecto y desplegar en el VPS equivocado lo pisaría.
+SSH_HOST="${SSH_HOST:-}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/vps_terapias}"
+APP_DIR="${APP_DIR:-/opt/terapias}"
+BACKUP_DIR="${BACKUP_DIR:-/opt/terapias-backups}"
+SERVICE="${SERVICE:-terapias}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3100/login}"
 KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 
 DRY_RUN=0 ASSUME_YES=0 RUN_MIGRATE=0 SKIP_BUILD=0
@@ -35,6 +37,8 @@ SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_HOST")
 say()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[aviso]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
+
+[ -n "$SSH_HOST" ] || die "define SSH_HOST (p. ej. SSH_HOST=root@<IP-del-VPS> $0)"
 
 # Todo lo que NO se sube. .env y node_modules viven solo en el servidor;
 # .next se regenera allá. Sin estas exclusiones, --delete los borraría.
@@ -110,6 +114,10 @@ fi
 say "Respaldando código fuente actual"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 "${SSH[@]}" "set -e
+  if [ ! -d '$APP_DIR/src' ]; then
+    echo '  (primer despliegue: no hay código previo que respaldar)'
+    exit 0
+  fi
   mkdir -p '$BACKUP_DIR'
   tar czf '$BACKUP_DIR/src-$STAMP.tar.gz' -C '$APP_DIR' \
     src prisma package.json package-lock.json next.config.ts 2>/dev/null
@@ -185,4 +193,5 @@ fi
 
 say "Despliegue completado"
 echo "  revisión desplegada: $(git rev-parse --short HEAD)"
-echo "  respaldo:            $BACKUP_DIR/src-$STAMP.tar.gz"
+RESPALDO="$("${SSH[@]}" "[ -f '$BACKUP_DIR/src-$STAMP.tar.gz' ] && echo '$BACKUP_DIR/src-$STAMP.tar.gz' || echo '(ninguno: primer despliegue)'")"
+echo "  respaldo:            $RESPALDO"

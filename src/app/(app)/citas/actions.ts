@@ -136,7 +136,7 @@ export async function crearCita(
 ): Promise<FormState> {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
-  assertSedeAccess(user, sedeId);
+  await assertSedeAccess(user, sedeId);
 
   const parsed = citaSchema.safeParse({
     pacienteId: formData.get("pacienteId"),
@@ -221,7 +221,7 @@ export async function actualizarCita(
     },
   });
   if (!cita) return { error: "Cita no encontrada." };
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   const parsed = citaSchema.safeParse({
     pacienteId: formData.get("pacienteId"),
@@ -298,7 +298,7 @@ export async function marcarAsistencia(formData: FormData): Promise<void> {
     select: { sedeId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   await prisma.cita.update({ where: { id }, data: { asistencia } });
 
@@ -320,7 +320,7 @@ export async function cambiarEstado(formData: FormData): Promise<void> {
     select: { sedeId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   await prisma.cita.update({ where: { id }, data: { estado } });
 
@@ -348,7 +348,7 @@ export async function registrarSeguimiento(
     select: { sedeId: true },
   });
   if (!cita) return { error: "Cita no encontrada." };
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   const parsed = seguimientoSchema.safeParse({
     terapiaRealizada: formData.get("terapiaRealizada") || undefined,
@@ -393,7 +393,7 @@ export async function eliminarCita(formData: FormData): Promise<void> {
     select: { sedeId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   await prisma.cita.delete({ where: { id } });
 
@@ -412,7 +412,7 @@ export async function marcarRecordatorioEnviado(formData: FormData): Promise<voi
     select: { sedeId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   await prisma.cita.update({
     where: { id },

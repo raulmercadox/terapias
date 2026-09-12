@@ -59,7 +59,7 @@ export default async function HistoriaClinicaPage({
     where: { id },
     include: { historiaClinica: true },
   });
-  if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+  if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
   const historia = paciente.historiaClinica;
 

@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  getCentro,
+  puedeVerPagos,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, ButtonLink } from "@/components/ui";
 import { nombreCompleto, fecha } from "@/lib/utils";
@@ -81,7 +86,8 @@ export default async function InformeAvancePage({
     },
   });
   if (!informe || informe.pacienteId !== id) notFound();
-  if (!canAccessSede(user, informe.sedeId)) notFound();
+  if (!(await canAccessSede(user, informe.sedeId))) notFound();
+  const centro = await getCentro(user.centroId);
 
   const secciones = normalizarSecciones(informe.secciones);
 
@@ -112,6 +118,12 @@ export default async function InformeAvancePage({
 
       {/* print-area: al imprimir se oculta todo lo demás (ver globals.css). */}
       <div className="print-area mx-auto max-w-3xl rounded-xl border border-slate-300 bg-white p-8 text-slate-900 shadow-sm">
+        <div className="mb-5 border-b border-slate-300 pb-3 text-center">
+          <p className="text-base font-bold">{centro.nombre}</p>
+          {centro.subtitulo && (
+            <p className="text-xs text-slate-600">{centro.subtitulo}</p>
+          )}
+        </div>
         <h1 className="mb-6 text-center text-lg font-bold underline">
           INFORME DE AVANCE
         </h1>

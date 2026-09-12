@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "B-Genius — Sistema de Terapias",
-  description: "Centro psicopedagógico B-Genius — gestión de terapias (Aula Azul)",
+  title: "Terapias",
+  description: "Sistema de gestión para centros de terapia",
 };
 
 export default function RootLayout({

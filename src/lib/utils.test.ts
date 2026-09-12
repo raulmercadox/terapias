@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fecha, fechaInput, hoyLima } from "./utils";
+import { fecha, fechaInput, hoyLima, iniciales } from "./utils";
+
+test("iniciales() toma las 2 primeras palabras significativas", () => {
+  assert.equal(iniciales("Centro Demo"), "CD");
+  assert.equal(iniciales("Centro de Terapias Arcoíris"), "CT");
+  assert.equal(iniciales("  arcoíris  "), "A");
+  assert.equal(iniciales("Óvalo del Sol"), "ÓS");
+  assert.equal(iniciales(""), "T");
+});
 
 // Regresión del bug de reprogramar sesiones:
 //

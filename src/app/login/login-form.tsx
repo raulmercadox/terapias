@@ -4,7 +4,7 @@ import { useFormReintento } from "@/components/form-reintento";
 import { authenticate } from "./actions";
 import { Button, Field, Input } from "@/components/ui";
 
-export function LoginForm() {
+export function LoginForm({ empresa }: { empresa?: string }) {
   // Aquí el estado es el propio mensaje de error, no un objeto con `error`.
   const {
     estado: error,
@@ -17,16 +17,27 @@ export function LoginForm() {
 
   return (
     <form key={formKey} {...formProps} className="space-y-4">
-      <Field label="Correo" required>
+      <Field label="Empresa" required>
         <Input
-          name="email"
-          type="email"
-          autoComplete="username"
-          placeholder="usuario@bgenius.pe"
+          name="empresa"
+          autoComplete="organization"
+          autoCapitalize="none"
+          spellCheck={false}
+          defaultValue={empresa}
           required
         />
       </Field>
-      <Field label="Contraseña" required>
+      <Field label="Usuario" required>
+        <Input
+          name="usuario"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          autoFocus={Boolean(empresa)}
+          required
+        />
+      </Field>
+      <Field label="Clave" required>
         <Input
           name="password"
           type="password"

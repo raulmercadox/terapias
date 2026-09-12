@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import type { Asistencia, EstadoCita } from "@prisma/client";
-import { requireUser, canAccessSede } from "@/lib/session";
+import { requireUser, canAccessSede, getCentro } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -62,7 +62,8 @@ export default async function DetalleCitaPage({
   });
 
   if (!cita) notFound();
-  if (!canAccessSede(user, cita.sedeId)) redirect("/citas");
+  if (!(await canAccessSede(user, cita.sedeId))) redirect("/citas");
+  const centro = await getCentro(user.centroId);
 
   const pacienteNombre = nombreCompleto(cita.paciente);
 
@@ -76,7 +77,7 @@ export default async function DetalleCitaPage({
   const mensaje =
     `Hola, le recordamos la cita de ${pacienteNombre} ` +
     `el ${fecha(cita.fecha)} a las ${cita.horaInicio} ` +
-    `en ${cita.sede.nombre}. ¡Gracias!`;
+    `en ${centro.nombre} (sede ${cita.sede.nombre}). ¡Gracias!`;
 
   return (
     <div className="space-y-6">

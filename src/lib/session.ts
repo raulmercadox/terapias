@@ -1,50 +1,94 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Rol, Sede } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export type SessionUser = {
+/** Usuario tal como viene en la sesión (el SUPERADMIN no tiene centro). */
+export type UsuarioSesion = {
   id: string;
   nombre: string;
-  email?: string | null;
+  usuario: string;
   rol: Rol;
+  centroId: string | null;
   sedeIds: string[];
 };
+
+/** Usuario de un centro: el que operan todos los módulos de la app. */
+export type SessionUser = UsuarioSesion & { centroId: string };
 
 const SEDE_COOKIE = "sede_activa";
 
 /** Devuelve el usuario de la sesión o null. */
-export async function getCurrentUser(): Promise<SessionUser | null> {
+export async function getCurrentUser(): Promise<UsuarioSesion | null> {
   const session = await auth();
   return session?.user ?? null;
 }
 
-/** Exige sesión; redirige a /login si no hay. */
+/**
+ * Exige sesión de un usuario de centro; redirige a /login si no hay. El
+ * superadmin no opera centros: se le manda a su panel.
+ */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (user.rol === "SUPERADMIN" || !user.centroId) redirect("/plataforma");
+  return user as SessionUser;
+}
+
+/** Exige sesión de SUPERADMIN. Úsalo en el panel /plataforma y sus acciones. */
+export async function requireSuperadmin(): Promise<UsuarioSesion> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.rol !== "SUPERADMIN") redirect("/");
   return user;
 }
 
-/** Sedes que el usuario puede ver (admin = todas). */
+/** Datos de marca del centro. Memoizado por request. */
+export const getCentro = cache(async (centroId: string) =>
+  prisma.centro.findUniqueOrThrow({
+    where: { id: centroId },
+    select: { id: true, codigo: true, nombre: true, subtitulo: true, activo: true },
+  }),
+);
+
+/** Ids de todas las sedes del centro (activas o no). Memoizado por request. */
+const getSedeIdsDelCentro = cache(async (centroId: string) => {
+  const sedes = await prisma.sede.findMany({
+    where: { centroId },
+    select: { id: true },
+  });
+  return sedes.map((s) => s.id);
+});
+
+/** Sedes que el usuario puede ver (admin = todas las de su centro). */
 export async function getSedesForUser(user: SessionUser): Promise<Sede[]> {
   if (user.rol === "ADMINISTRADOR") {
     return prisma.sede.findMany({
-      where: { activo: true },
+      where: { centroId: user.centroId, activo: true },
       orderBy: { nombre: "asc" },
     });
   }
   return prisma.sede.findMany({
-    where: { id: { in: user.sedeIds }, activo: true },
+    where: { id: { in: user.sedeIds }, centroId: user.centroId, activo: true },
     orderBy: { nombre: "asc" },
   });
 }
 
-/** ¿El usuario tiene acceso a esta sede? */
-export function canAccessSede(user: SessionUser, sedeId: string): boolean {
-  return user.rol === "ADMINISTRADOR" || user.sedeIds.includes(sedeId);
+/**
+ * ¿El usuario tiene acceso a esta sede? El admin, a cualquiera de su centro;
+ * los demás, solo a las que tienen asignadas.
+ */
+export async function canAccessSede(
+  user: SessionUser,
+  sedeId: string,
+): Promise<boolean> {
+  if (user.rol === "ADMINISTRADOR") {
+    return (await getSedeIdsDelCentro(user.centroId)).includes(sedeId);
+  }
+  return user.sedeIds.includes(sedeId);
 }
 
 /**
@@ -75,8 +119,11 @@ export async function requireActiveSede(user: SessionUser): Promise<string> {
  * Lanza si el usuario no puede operar sobre la sede dada.
  * Úsalo en server actions de creación/edición.
  */
-export function assertSedeAccess(user: SessionUser, sedeId: string): void {
-  if (!canAccessSede(user, sedeId)) {
+export async function assertSedeAccess(
+  user: SessionUser,
+  sedeId: string,
+): Promise<void> {
+  if (!(await canAccessSede(user, sedeId))) {
     throw new Error("No tiene acceso a esta sede.");
   }
 }

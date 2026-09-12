@@ -183,7 +183,7 @@ export async function crearHistoria(
     select: { sedeId: true, historiaClinica: { select: { id: true } } },
   });
   if (!paciente) return { error: "El paciente no existe." };
-  assertSedeAccess(user, paciente.sedeId);
+  await assertSedeAccess(user, paciente.sedeId);
   if (paciente.historiaClinica) {
     return { error: "Este paciente ya tiene una historia clínica registrada." };
   }
@@ -218,7 +218,7 @@ export async function actualizarHistoria(
     select: { sedeId: true, pacienteId: true },
   });
   if (!existente) return { error: "La historia clínica no existe." };
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   const parsed = parseHistoriaForm(formData);
   if (!parsed.success) {
@@ -246,7 +246,7 @@ export async function eliminarHistoria(historiaId: string) {
     select: { sedeId: true, pacienteId: true },
   });
   if (!existente) throw new Error("La historia clínica no existe.");
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   await prisma.historiaClinica.delete({ where: { id: historiaId } });
 

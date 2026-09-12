@@ -90,6 +90,23 @@ export function edad(fechaNac: Date | string | null | undefined): string {
   return `${years} años`;
 }
 
+const CONECTORES = new Set(["de", "del", "la", "las", "los", "el", "y"]);
+
+/**
+ * Iniciales para el cuadro del logo: las 2 primeras palabras significativas.
+ * "Centro de Terapias Arcoíris" → "CT"; "Arcoíris" → "A".
+ */
+export function iniciales(nombre: string): string {
+  const letras = nombre
+    .trim()
+    .split(/\s+/)
+    .filter((p) => p && !CONECTORES.has(p.toLowerCase()))
+    .slice(0, 2)
+    .map((p) => Array.from(p)[0])
+    .join("");
+  return letras.toLocaleUpperCase("es") || "T";
+}
+
 export function nombreCompleto(p: {
   nombres: string;
   apellidoPaterno?: string | null;

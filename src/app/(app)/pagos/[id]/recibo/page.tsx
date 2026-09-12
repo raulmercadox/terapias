@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  getCentro,
+  puedeVerPagos,
+} from "@/lib/session";
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
 import { normalizarTelefonoPe } from "../../../citas/helpers";
 import { PrintActions } from "./print-button";
@@ -69,7 +74,8 @@ export default async function ReciboPage({
     },
   });
 
-  if (!pago || !canAccessSede(user, pago.sedeId)) notFound();
+  if (!pago || !(await canAccessSede(user, pago.sedeId))) notFound();
+  const centro = await getCentro(user.centroId);
 
   // Teléfono: apoderado principal > primer apoderado con teléfono > paciente.
   const apoderado =
@@ -81,7 +87,7 @@ export default async function ReciboPage({
 
   const conceptoLabel = CONCEPTO_LABEL[pago.concepto] ?? pago.concepto;
   const mensajeWhatsApp =
-    `*Centro B-Genius* — Recibo ${pago.numeroRecibo}\n` +
+    `*${centro.nombre}* — Recibo ${pago.numeroRecibo}\n` +
     `Paciente: ${nombreCompleto(pago.paciente)}\n` +
     `Concepto: ${conceptoLabel}\n` +
     `Fecha: ${fecha(pago.fechaPago)}\n` +
@@ -97,8 +103,10 @@ export default async function ReciboPage({
         {/* Encabezado */}
         <div className="flex items-start justify-between border-b border-slate-300 pb-4">
           <div>
-            <h1 className="text-xl font-bold">Centro B-Genius</h1>
-            <p className="text-sm text-slate-600">Terapias / Aula Azul</p>
+            <h1 className="text-xl font-bold">{centro.nombre}</h1>
+            {centro.subtitulo && (
+              <p className="text-sm text-slate-600">{centro.subtitulo}</p>
+            )}
             <p className="mt-1 text-sm font-medium">Sede: {pago.sede.nombre}</p>
             {pago.sede.direccion && (
               <p className="text-xs text-slate-500">{pago.sede.direccion}</p>

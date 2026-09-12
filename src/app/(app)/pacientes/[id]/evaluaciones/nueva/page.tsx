@@ -27,7 +27,7 @@ export default async function NuevaEvaluacionPage({
       diagnostico: true,
     },
   });
-  if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+  if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
   const terapeutas = await prisma.terapeuta.findMany({
     where: { sedeId: paciente.sedeId, activo: true },

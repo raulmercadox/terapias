@@ -16,7 +16,7 @@ export default async function EditarCitaPage({
 
   const cita = await prisma.cita.findUnique({ where: { id } });
   if (!cita) notFound();
-  if (!canAccessSede(user, cita.sedeId)) redirect("/citas");
+  if (!(await canAccessSede(user, cita.sedeId))) redirect("/citas");
 
   const [pacientes, terapeutas] = await Promise.all([
     prisma.paciente.findMany({

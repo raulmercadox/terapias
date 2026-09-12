@@ -23,6 +23,7 @@ export default async function SedesPage({
   const editarId = typeof editar === "string" ? editar : undefined;
 
   const sedes = await prisma.sede.findMany({
+    where: { centroId: user.centroId },
     orderBy: [{ activo: "desc" }, { nombre: "asc" }],
   });
 

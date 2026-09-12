@@ -22,6 +22,7 @@ export default async function UsuariosPage() {
   if (user.rol !== "ADMINISTRADOR") notFound();
 
   const usuarios = await prisma.user.findMany({
+    where: { centroId: user.centroId },
     orderBy: [{ activo: "desc" }, { nombre: "asc" }],
     include: { sedes: { include: { sede: true } } },
   });
@@ -45,7 +46,7 @@ export default async function UsuariosPage() {
           <thead>
             <tr>
               <Th>Nombre</Th>
-              <Th>Correo</Th>
+              <Th>Usuario</Th>
               <Th>Rol</Th>
               <Th>Sedes</Th>
               <Th>Estado</Th>
@@ -55,8 +56,13 @@ export default async function UsuariosPage() {
           <tbody className="divide-y divide-slate-100">
             {usuarios.map((u) => (
               <tr key={u.id}>
-                <Td className="font-medium text-slate-900">{u.nombre}</Td>
-                <Td>{u.email}</Td>
+                <Td>
+                  <span className="font-medium text-slate-900">{u.nombre}</span>
+                  {u.email && (
+                    <span className="block text-xs text-slate-400">{u.email}</span>
+                  )}
+                </Td>
+                <Td className="font-mono text-sm">{u.usuario}</Td>
                 <Td>{rolLabel[u.rol] ?? u.rol}</Td>
                 <Td>
                   {u.rol === "ADMINISTRADOR"

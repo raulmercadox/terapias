@@ -27,7 +27,7 @@ export default async function EditarEvaluacionPage({
   if (
     !evaluacion ||
     evaluacion.pacienteId !== id ||
-    !canAccessSede(user, evaluacion.sedeId)
+    !(await canAccessSede(user, evaluacion.sedeId))
   ) {
     notFound();
   }

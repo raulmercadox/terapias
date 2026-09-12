@@ -127,7 +127,7 @@ export async function crearPaciente(
   const user = await requireUser();
   assertRolGestion(user);
   const sedeId = await requireActiveSede(user);
-  assertSedeAccess(user, sedeId);
+  await assertSedeAccess(user, sedeId);
 
   const parsed = parsePacienteForm(formData);
   if (!parsed.success) {
@@ -222,7 +222,7 @@ export async function actualizarPaciente(
     select: { sedeId: true },
   });
   if (!existente) return { error: "El paciente no existe." };
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   const parsed = parsePacienteForm(formData);
   if (!parsed.success) {
@@ -251,7 +251,7 @@ export async function cambiarEstado(pacienteId: string, estado: string) {
     select: { sedeId: true },
   });
   if (!existente) throw new Error("El paciente no existe.");
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   const nuevoEstado = z.enum(ESTADOS).parse(estado);
 
@@ -273,7 +273,7 @@ async function assertPacienteAccess(user: Awaited<ReturnType<typeof requireUser>
     select: { sedeId: true },
   });
   if (!paciente) throw new Error("El paciente no existe.");
-  assertSedeAccess(user, paciente.sedeId);
+  await assertSedeAccess(user, paciente.sedeId);
 }
 
 function parseApoderadoForm(formData: FormData) {

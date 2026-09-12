@@ -1,5 +1,6 @@
-// Sistema B-Genius — Línea Terapias / Aula Azul
-// Esquema de datos (PostgreSQL)
+// Sistema Terapias — esquema multitenant (PostgreSQL)
+// Cada Centro (empresa) tiene sus sedes y usuarios; el resto de los datos
+// cuelga de una sede, así que el aislamiento entre centros pasa por Sede.
 
 generator client {
   provider = "prisma-client-js"
@@ -14,6 +15,7 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 enum Rol {
+  SUPERADMIN // usuario de plataforma: da de alta centros, no pertenece a ninguno
   ADMINISTRADOR
   COORDINADOR
   USUARIO
@@ -109,12 +111,28 @@ enum ResultadoSalida {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Núcleo: Sedes y Usuarios
+// Núcleo: Centros, Sedes y Usuarios
 // ─────────────────────────────────────────────────────────────
+
+// Centro de terapias (tenant). Su `codigo` es lo que se escribe en el campo
+// "Empresa" del login; `nombre` y `subtitulo` son la marca en pantallas.
+model Centro {
+  id        String   @id @default(cuid())
+  codigo    String   @unique // minúsculas, números y guiones
+  nombre    String
+  subtitulo String?
+  activo    Boolean  @default(true) // inactivo = nadie del centro puede entrar
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sedes    Sede[]
+  usuarios User[]
+}
 
 model Sede {
   id                   String   @id @default(cuid())
-  nombre               String   @unique
+  centroId             String
+  nombre               String
   direccion            String?
   telefono             String?
   activo               Boolean  @default(true)
@@ -136,6 +154,7 @@ model Sede {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  centro            Centro            @relation(fields: [centroId], references: [id])
   usuarios          UserSede[]
   terapeutas        Terapeuta[]
   pacientes         Paciente[]
@@ -148,19 +167,28 @@ model Sede {
   historiasClinicas HistoriaClinica[]
   informesAvance    InformeAvance[]
   interacciones     Interaccion[]
+
+  @@unique([centroId, nombre])
 }
 
 model User {
   id           String     @id @default(cuid())
+  // Null solo para SUPERADMIN. Postgres no aplica el @@unique con NULL, así
+  // que la unicidad de `usuario` entre superadmins se valida en código.
+  centroId     String?
   nombre       String
-  email        String     @unique
+  usuario      String // con lo que inicia sesión; único dentro del centro
+  email        String?
   passwordHash String
   rol          Rol        @default(USUARIO)
   activo       Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  // Sedes asignadas (Coordinador: varias; Usuario: una). Admin ve todas, sin filas.
+  centro       Centro?    @relation(fields: [centroId], references: [id])
+  // Sedes asignadas (Coordinador: varias; Usuario: una). Admin ve todas las de su centro, sin filas.
   sedes        UserSede[]
+
+  @@unique([centroId, usuario])
 }
 
 model UserSede {

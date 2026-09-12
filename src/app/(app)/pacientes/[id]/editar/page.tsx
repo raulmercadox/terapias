@@ -21,7 +21,7 @@ export default async function EditarPacientePage({
   if (!puedeVerPagos(user)) notFound();
 
   const paciente = await prisma.paciente.findUnique({ where: { id } });
-  if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+  if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
   const inicial: PacienteInicial = {
     nombres: paciente.nombres,

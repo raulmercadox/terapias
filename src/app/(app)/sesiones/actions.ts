@@ -119,7 +119,7 @@ export async function crearPaquete(
 ): Promise<ActionState> {
   const user = await requireUser();
   const sedeId = formData.get("sedeId") as string;
-  assertSedeAccess(user, sedeId);
+  await assertSedeAccess(user, sedeId);
 
   const parsed = crearPaqueteSchema.safeParse(
     Object.fromEntries(formData.entries()),
@@ -350,7 +350,7 @@ export async function registrarAsistencia(
     select: { sedeId: true, paqueteId: true },
   });
   if (!cita) return { ok: false, error: "Sesión no encontrada." };
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   // ASISTIO/TARDANZA -> sesión atendida; FALTO -> cancelada para esa cita.
   const estado = asistencia === "FALTO" ? "CANCELADA" : "ATENDIDA";
@@ -403,7 +403,7 @@ export async function reprogramarSesion(
     },
   });
   if (!cita) return { ok: false, error: "Sesión no encontrada." };
-  assertSedeAccess(user, cita.sedeId);
+  await assertSedeAccess(user, cita.sedeId);
 
   const nuevaFecha = parseFecha(fecha);
   if (!nuevaFecha) return { ok: false, error: "Fecha inválida." };
@@ -509,7 +509,7 @@ export async function actualizarPaquete(
     select: { sedeId: true },
   });
   if (!paquete) return { ok: false, error: "Paquete no encontrado." };
-  assertSedeAccess(user, paquete.sedeId);
+  await assertSedeAccess(user, paquete.sedeId);
 
   await prisma.paquete.update({
     where: { id: paqueteId },
@@ -551,7 +551,7 @@ export async function cambiarEstadoPaquete(
     },
   });
   if (!paquete) return { ok: false, error: "Paquete no encontrado." };
-  assertSedeAccess(user, paquete.sedeId);
+  await assertSedeAccess(user, paquete.sedeId);
 
   // Para COMPLETAR exigimos que todas las sesiones tengan asistencia registrada.
   if (estado === "COMPLETADO") {
@@ -591,7 +591,7 @@ export async function anularPaquete(
     select: { sedeId: true },
   });
   if (!paquete) return { ok: false, error: "Paquete no encontrado." };
-  assertSedeAccess(user, paquete.sedeId);
+  await assertSedeAccess(user, paquete.sedeId);
 
   // Anula el paquete y cancela las sesiones aún pendientes (no atendidas).
   await prisma.$transaction([
@@ -633,7 +633,7 @@ export async function renovarPaquete(
     },
   });
   if (!origen) return { ok: false, error: "Paquete no encontrado." };
-  assertSedeAccess(user, origen.sedeId);
+  await assertSedeAccess(user, origen.sedeId);
 
   // Solo se puede renovar si TODAS las sesiones del paquete actual ya tienen
   // asistencia registrada (no quedan pendientes). Evita crear un paquete nuevo

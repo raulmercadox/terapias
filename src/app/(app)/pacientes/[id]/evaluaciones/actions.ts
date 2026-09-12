@@ -200,7 +200,7 @@ export async function crearEvaluacion(
     select: { sedeId: true },
   });
   if (!paciente) return { error: "El paciente no existe." };
-  assertSedeAccess(user, paciente.sedeId);
+  await assertSedeAccess(user, paciente.sedeId);
 
   const parsed = parseEvaluacionForm(formData);
   if (!parsed.success) {
@@ -270,7 +270,7 @@ export async function actualizarEvaluacion(
     select: { sedeId: true, pacienteId: true, fecha: true },
   });
   if (!existente) return { error: "La evaluación no existe." };
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   const parsed = parseEvaluacionForm(formData);
   if (!parsed.success) {
@@ -320,7 +320,7 @@ export async function eliminarEvaluacion(evaluacionId: string) {
     select: { sedeId: true, pacienteId: true },
   });
   if (!existente) throw new Error("La evaluación no existe.");
-  assertSedeAccess(user, existente.sedeId);
+  await assertSedeAccess(user, existente.sedeId);
 
   await prisma.evaluacion.delete({ where: { id: evaluacionId } });
 

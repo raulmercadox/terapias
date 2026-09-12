@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { requireUser, getSedesForUser, getActiveSedeId } from "@/lib/session";
+import type { Metadata } from "next";
+import {
+  requireUser,
+  getCurrentUser,
+  getCentro,
+  getSedesForUser,
+  getActiveSedeId,
+} from "@/lib/session";
+import { iniciales } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { SedeSwitcher } from "@/components/sede-switcher";
 import { cerrarSesion } from "./actions";
@@ -10,22 +18,37 @@ const ROL_LABEL: Record<string, string> = {
   USUARIO: "Usuario",
 };
 
+/** La pestaña muestra el nombre del centro con el que se inició sesión. */
+export async function generateMetadata(): Promise<Metadata> {
+  const user = await getCurrentUser();
+  if (!user?.centroId) return {};
+  const centro = await getCentro(user.centroId);
+  return { title: `${centro.nombre} — Terapias` };
+}
+
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
-  const sedes = await getSedesForUser(user);
-  const activeSedeId = (await getActiveSedeId(user)) ?? "";
+  const [centro, sedes, activeSedeId] = await Promise.all([
+    getCentro(user.centroId),
+    getSedesForUser(user),
+    getActiveSedeId(user),
+  ]);
 
   return (
     <div className="flex min-h-screen bg-slate-100">
       {/* Sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-600 text-sm font-bold text-white">
-            BG
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-sm font-bold text-white">
+            {iniciales(centro.nombre)}
           </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-900">B-Genius</p>
-            <p className="text-xs text-slate-400">Terapias</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900" title={centro.nombre}>
+              {centro.nombre}
+            </p>
+            <p className="truncate text-xs text-slate-400">
+              {centro.subtitulo ?? "Terapias"}
+            </p>
           </div>
         </div>
         <Sidebar rol={user.rol} />
@@ -34,7 +57,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-          <SedeSwitcher sedes={sedes} activeSedeId={activeSedeId} />
+          <SedeSwitcher sedes={sedes} activeSedeId={activeSedeId ?? ""} />
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className="text-sm font-medium text-slate-900">{user.nombre}</p>

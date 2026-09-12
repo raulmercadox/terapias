@@ -24,11 +24,12 @@ export default async function ProgramasPage({
 
   const [programas, sedes] = await Promise.all([
     prisma.programaTerapia.findMany({
+      where: { sede: { centroId: user.centroId } },
       orderBy: [{ activo: "desc" }, { nombre: "asc" }],
       include: { sede: { select: { nombre: true } } },
     }),
     prisma.sede.findMany({
-      where: { activo: true },
+      where: { centroId: user.centroId, activo: true },
       orderBy: { nombre: "asc" },
       select: { id: true, nombre: true },
     }),

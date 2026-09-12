@@ -13,12 +13,12 @@ export default async function EditarUsuarioPage({
   const { id } = await params;
 
   const [usuario, sedes] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id },
+    prisma.user.findFirst({
+      where: { id, centroId: user.centroId },
       include: { sedes: { select: { sedeId: true } } },
     }),
     prisma.sede.findMany({
-      where: { activo: true },
+      where: { centroId: user.centroId, activo: true },
       orderBy: { nombre: "asc" },
       select: { id: true, nombre: true },
     }),
@@ -38,6 +38,7 @@ export default async function EditarUsuarioPage({
           usuario={{
             id: usuario.id,
             nombre: usuario.nombre,
+            usuario: usuario.usuario,
             email: usuario.email,
             rol: usuario.rol,
             activo: usuario.activo,

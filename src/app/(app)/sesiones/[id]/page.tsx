@@ -66,7 +66,7 @@ export default async function PaqueteDetallePage({
   });
 
   if (!paquete) notFound();
-  if (!canAccessSede(user, paquete.sedeId)) notFound();
+  if (!(await canAccessSede(user, paquete.sedeId))) notFound();
 
   const terapeutas = await prisma.terapeuta.findMany({
     where: { sedeId: paquete.sedeId, activo: true },

@@ -40,7 +40,7 @@ export async function registrarInteraccion(
     select: { sedeId: true },
   });
   if (!paciente) return { error: "El paciente no existe." };
-  assertSedeAccess(user, paciente.sedeId);
+  await assertSedeAccess(user, paciente.sedeId);
 
   const parsed = interaccionSchema.safeParse({
     direccion: formData.get("direccion"),
@@ -89,7 +89,7 @@ export async function eliminarInteraccion(id: string): Promise<void> {
     select: { sedeId: true, pacienteId: true },
   });
   if (!interaccion) return;
-  assertSedeAccess(user, interaccion.sedeId);
+  await assertSedeAccess(user, interaccion.sedeId);
 
   await prisma.interaccion.delete({ where: { id } });
   revalidarSeguimiento(interaccion.pacienteId);

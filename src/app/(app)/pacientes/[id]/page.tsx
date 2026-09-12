@@ -83,7 +83,7 @@ export default async function PacienteDetallePage({
     },
   });
 
-  if (!paciente || !canAccessSede(user, paciente.sedeId)) notFound();
+  if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
   const pendiente = pendienteDe(paciente.interacciones);
 

@@ -9,7 +9,7 @@ export default async function NuevoUsuarioPage() {
   if (user.rol !== "ADMINISTRADOR") notFound();
 
   const sedes = await prisma.sede.findMany({
-    where: { activo: true },
+    where: { centroId: user.centroId, activo: true },
     orderBy: { nombre: "asc" },
     select: { id: true, nombre: true },
   });

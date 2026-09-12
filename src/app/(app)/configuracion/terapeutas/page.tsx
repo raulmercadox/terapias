@@ -24,11 +24,12 @@ export default async function TerapeutasPage({
 
   const [terapeutas, sedes] = await Promise.all([
     prisma.terapeuta.findMany({
+      where: { sede: { centroId: user.centroId } },
       orderBy: [{ activo: "desc" }, { apellidos: "asc" }],
       include: { sede: { select: { nombre: true } } },
     }),
     prisma.sede.findMany({
-      where: { activo: true },
+      where: { centroId: user.centroId, activo: true },
       orderBy: { nombre: "asc" },
       select: { id: true, nombre: true },
     }),

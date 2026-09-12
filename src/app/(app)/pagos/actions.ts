@@ -80,7 +80,7 @@ export async function registrarPago(
   const user = await requireUser();
   assertRolGestion(user);
   const sedeId = await requireActiveSede(user);
-  assertSedeAccess(user, sedeId);
+  await assertSedeAccess(user, sedeId);
 
   const parsed = pagoSchema.safeParse({
     pacienteId: formData.get("pacienteId"),

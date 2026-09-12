@@ -66,7 +66,7 @@ export default async function EvaluacionDetallePage({
   if (
     !evaluacion ||
     evaluacion.pacienteId !== id ||
-    !canAccessSede(user, evaluacion.sedeId)
+    !(await canAccessSede(user, evaluacion.sedeId))
   ) {
     notFound();
   }

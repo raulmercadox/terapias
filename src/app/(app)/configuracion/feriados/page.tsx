@@ -23,7 +23,7 @@ export default async function FeriadosPage({
   const sedeParam = typeof sede === "string" ? sede : undefined;
 
   const sedes = await prisma.sede.findMany({
-    where: { activo: true },
+    where: { centroId: user.centroId, activo: true },
     orderBy: { nombre: "asc" },
     select: { id: true, nombre: true },
   });

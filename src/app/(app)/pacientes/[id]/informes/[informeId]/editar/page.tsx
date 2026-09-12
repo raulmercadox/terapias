@@ -31,7 +31,7 @@ export default async function EditarInformePage({
     },
   });
   if (!informe || informe.pacienteId !== id) notFound();
-  if (!canAccessSede(user, informe.sedeId)) notFound();
+  if (!(await canAccessSede(user, informe.sedeId))) notFound();
 
   const terapeutas = await prisma.terapeuta.findMany({
     where: { sedeId: informe.sedeId, activo: true },
