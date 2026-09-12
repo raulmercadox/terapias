@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Form from "next/form";
 import { requireUser, requireActiveSede } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
@@ -8,7 +9,6 @@ import {
   EmptyState,
   Badge,
   Field,
-  Select,
 } from "@/components/ui";
 import { fecha, nombreCompleto } from "@/lib/utils";
 import {
@@ -23,6 +23,7 @@ import {
   ASISTENCIA_LABEL,
   TIPO_LABEL,
 } from "./helpers";
+import { FiltroTerapeuta } from "./filtro-terapeuta";
 
 export default async function AgendaPage({
   searchParams,
@@ -104,17 +105,21 @@ export default async function AgendaPage({
           </ButtonLink>
         </div>
 
-        <form method="get" className="flex items-end gap-2">
+        <Form action="/citas" replace scroll={false} className="flex items-end gap-2">
           <input type="hidden" name="semana" value={aISO(lunes)} />
           <Field label="Terapeuta" className="w-60">
-            <Select name="terapeutaId" defaultValue={terapeutaFiltro ?? ""}>
+            {/* key: al "Limpiar" o cambiar la URL, el select se remonta con el valor nuevo */}
+            <FiltroTerapeuta
+              key={terapeutaFiltro ?? ""}
+              defaultValue={terapeutaFiltro ?? ""}
+            >
               <option value="">Todos los terapeutas</option>
               {terapeutas.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.apellidos} {t.nombres}
                 </option>
               ))}
-            </Select>
+            </FiltroTerapeuta>
           </Field>
           <ButtonLink
             href={`/citas?semana=${aISO(lunes)}`}
@@ -125,7 +130,7 @@ export default async function AgendaPage({
           <button type="submit" className="sr-only">
             Filtrar
           </button>
-        </form>
+        </Form>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
