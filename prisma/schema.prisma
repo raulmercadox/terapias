@@ -378,72 +378,20 @@ model Evaluacion {
   @@index([sedeId])
 }
 
-// Historia Clínica: única por paciente (a diferencia de las fichas de
-// evaluación, que pueden ser varias). Se llena cuando el niño ya lleva un
-// programa en el centro. Réplica del formato impreso (secciones I–VI).
+// Historia Clínica: única por paciente. Su estructura ya no vive en columnas
+// fijas sino en la plantilla HISTORIA del centro (ver src/lib/fichas): así el
+// mismo sistema sirve a terapia psicológica y física. `valores` guarda lo
+// registrado, indexado por id de campo de la plantilla. Es un expediente vivo:
+// sigue la plantilla vigente, y lo registrado con campos que luego se quitaron
+// nunca se borra (se muestra aparte).
 model HistoriaClinica {
   id         String   @id @default(cuid())
   sedeId     String
   pacienteId String   @unique
   fecha      DateTime @default(now())
-
-  // I. Datos generales complementarios (nombre, edad, dirección… viven en Paciente)
-  lugarNacimiento String?
-  padreApoderado  String?
-
-  // II.1 Historia familiar, tabla dinámica keyed por fila
-  // (pacientes/[id]/historia/historia.ts):
-  // [{ parentesco?, nombres?, edad?, ocupacion?, relacion? }]
-  familiares Json @default("[]")
-
-  // II.2 Historia pre - postnatal
-  historiaPrePostnatal   String?
-  presentacionDificultad String? // ¿Cómo se presentó? ¿Desde cuándo? ¿Quién lo detectó?
-  signosSintomas         String?
-
-  // II.3 Historia escolar
-  tempranaCentro        String? // E. Temprana: centro educativo
-  tempranaAdaptacion    String? // E. Temprana: proceso de adaptación / dificultades
-  kinderCentro          String?
-  kinderAdaptacion      String?
-  evolucionMejoria      String? // ¿Cómo ha evolucionado? ¿Ha notado alguna mejoría?
-  examenesRealizados    String?
-  tratamientosRecibidos String? // terapias recibidas, tiempo, instituciones, evolución
-
-  // II.4 Tratamiento farmacológico – medicación
-  indicacionesDoctor    String?
-  medicinasRecomendadas String?
-  dosis                 String?
-  tiempoInicio          String?
-  mejoriaMedicacion     String? // ¿Qué mejoría presenta el menor?
-
-  // III. Formación de hábitos
-  alimentacion      String?
-  controlEsfinteres String?
-  sueno             String?
-  autonomiaPersonal String?
-
-  // IV. Opinión y actitud del padre hacia el hijo
-  reaccionRechazo      Boolean @default(false)
-  reaccionIndiferencia Boolean @default(false)
-  reaccionAceptacion   Boolean @default(false)
-  reaccionPreocupacion Boolean @default(false)
-  reaccionVerguenza    Boolean @default(false)
-  reaccionDetalle      String?
-  creencias            String? // creencias sobre el problema, sentimientos de culpa
-  cambiosCrianza       String? // aislarlo, dejarlo con el grupo, mayor atención…
-  usoCastigo           String? // ¿cómo, con qué frecuencia? reacción del niño
-  comportamientoApego  String? // comportamiento con padres/hermanos/amigos; apego
-
-  // V. Antecedentes familiares
-  enfermedadesFamiliares String? // SI/NO especificar enfermedad/condición
-  caracterPadres         String? // carácter de los padres, relación de pareja
-
-  // VI. Observaciones durante la entrevista
-  observacionesEntrevista String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  valores    Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   sede     Sede     @relation(fields: [sedeId], references: [id])
   paciente Paciente @relation(fields: [pacienteId], references: [id], onDelete: Cascade)

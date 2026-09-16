@@ -3,7 +3,8 @@ import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { nombreCompleto, hoyLima } from "@/lib/utils";
-import { HistoriaForm } from "../historia-form";
+import { obtenerPlantilla } from "@/lib/plantillas";
+import { FichaForm } from "@/components/ficha/ficha-form";
 import { crearHistoria } from "../actions";
 
 export default async function NuevaHistoriaPage({
@@ -33,6 +34,7 @@ export default async function NuevaHistoriaPage({
     redirect(`/pacientes/${paciente.id}/historia`);
   }
 
+  const { plantilla } = await obtenerPlantilla(user.centroId, "HISTORIA");
   const accion = crearHistoria.bind(null, paciente.id);
 
   return (
@@ -42,10 +44,13 @@ export default async function NuevaHistoriaPage({
         subtitle={nombreCompleto(paciente)}
       />
       <div className="max-w-4xl">
-        <HistoriaForm
-          action={accion}
-          inicial={{ fecha: hoyLima() }}
+        <FichaForm
+          plantilla={plantilla}
+          fecha={hoyLima()}
+          etiquetaFecha="Fecha de la historia"
+          accion={accion}
           cancelarHref={`/pacientes/${paciente.id}`}
+          textoGuardar="Guardar historia clínica"
         />
       </div>
     </div>

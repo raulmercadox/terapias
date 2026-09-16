@@ -3,9 +3,10 @@ import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { nombreCompleto, fechaInput } from "@/lib/utils";
-import { HistoriaForm } from "../historia-form";
+import { obtenerPlantilla } from "@/lib/plantillas";
+import { normalizarValores } from "@/lib/fichas/valores";
+import { FichaForm } from "@/components/ficha/ficha-form";
 import { actualizarHistoria } from "../actions";
-import { normalizarFamiliares } from "../historia";
 
 export default async function EditarHistoriaPage({
   params,
@@ -24,7 +25,7 @@ export default async function EditarHistoriaPage({
       nombres: true,
       apellidoPaterno: true,
       apellidoMaterno: true,
-      historiaClinica: true,
+      historiaClinica: { select: { id: true, fecha: true, valores: true } },
     },
   });
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
@@ -32,6 +33,9 @@ export default async function EditarHistoriaPage({
   const historia = paciente.historiaClinica;
   if (!historia) redirect(`/pacientes/${paciente.id}/historia/nueva`);
 
+  // La historia es un expediente vivo: se edita con la plantilla VIGENTE del
+  // centro, no con la que tenía cuando se creó.
+  const { plantilla } = await obtenerPlantilla(user.centroId, "HISTORIA");
   const accion = actualizarHistoria.bind(null, historia.id);
 
   return (
@@ -41,47 +45,14 @@ export default async function EditarHistoriaPage({
         subtitle={nombreCompleto(paciente)}
       />
       <div className="max-w-4xl">
-        <HistoriaForm
-          action={accion}
-          inicial={{
-            fecha: fechaInput(historia.fecha),
-            lugarNacimiento: historia.lugarNacimiento,
-            padreApoderado: historia.padreApoderado,
-            familiares: normalizarFamiliares(historia.familiares),
-            historiaPrePostnatal: historia.historiaPrePostnatal,
-            presentacionDificultad: historia.presentacionDificultad,
-            signosSintomas: historia.signosSintomas,
-            tempranaCentro: historia.tempranaCentro,
-            tempranaAdaptacion: historia.tempranaAdaptacion,
-            kinderCentro: historia.kinderCentro,
-            kinderAdaptacion: historia.kinderAdaptacion,
-            evolucionMejoria: historia.evolucionMejoria,
-            examenesRealizados: historia.examenesRealizados,
-            tratamientosRecibidos: historia.tratamientosRecibidos,
-            indicacionesDoctor: historia.indicacionesDoctor,
-            medicinasRecomendadas: historia.medicinasRecomendadas,
-            dosis: historia.dosis,
-            tiempoInicio: historia.tiempoInicio,
-            mejoriaMedicacion: historia.mejoriaMedicacion,
-            alimentacion: historia.alimentacion,
-            controlEsfinteres: historia.controlEsfinteres,
-            sueno: historia.sueno,
-            autonomiaPersonal: historia.autonomiaPersonal,
-            reaccionRechazo: historia.reaccionRechazo,
-            reaccionIndiferencia: historia.reaccionIndiferencia,
-            reaccionAceptacion: historia.reaccionAceptacion,
-            reaccionPreocupacion: historia.reaccionPreocupacion,
-            reaccionVerguenza: historia.reaccionVerguenza,
-            reaccionDetalle: historia.reaccionDetalle,
-            creencias: historia.creencias,
-            cambiosCrianza: historia.cambiosCrianza,
-            usoCastigo: historia.usoCastigo,
-            comportamientoApego: historia.comportamientoApego,
-            enfermedadesFamiliares: historia.enfermedadesFamiliares,
-            caracterPadres: historia.caracterPadres,
-            observacionesEntrevista: historia.observacionesEntrevista,
-          }}
+        <FichaForm
+          plantilla={plantilla}
+          valores={normalizarValores(historia.valores, plantilla)}
+          fecha={fechaInput(historia.fecha)}
+          etiquetaFecha="Fecha de la historia"
+          accion={accion}
           cancelarHref={`/pacientes/${paciente.id}/historia`}
+          textoGuardar="Guardar historia clínica"
         />
       </div>
     </div>
