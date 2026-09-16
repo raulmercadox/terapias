@@ -13,7 +13,7 @@ Sistema **Terapias** — multitenant para centros de terapia.
 - `src/proxy.ts` (antes `middleware`) solo hace chequeos optimistas; la autorización real va en páginas y acciones.
 
 ## Archivos compartidos (cámbialos solo si tu tarea es de la base)
-`prisma/schema.prisma`, `src/lib/*`, `src/components/ui.tsx`, `src/components/sidebar.tsx`, `src/components/sede-switcher.tsx`, `src/app/layout.tsx`, `src/app/(app)/layout.tsx`, `src/app/(app)/actions.ts`, `src/proxy.ts`, `src/app/login/*`, `src/app/plataforma/*`.
+`prisma/schema.prisma`, `src/lib/*`, `src/components/ui.tsx`, `src/components/sidebar.tsx`, `src/components/sede-switcher.tsx`, `src/components/ficha/*`, `src/app/layout.tsx`, `src/app/(app)/layout.tsx`, `src/app/(app)/actions.ts`, `src/proxy.ts`, `src/app/login/*`, `src/app/plataforma/*`.
 
 ## Multitenancy: cómo se aísla cada centro
 - **Centro**(id,codigo,nombre,subtitulo,activo) 1—n **Sede** y 1—n **User**.
@@ -21,6 +21,7 @@ Sistema **Terapias** — multitenant para centros de terapia.
 - Por eso: **nunca** leas o escribas un registro por `id` sin comprobar después su `sedeId` con `canAccessSede`/`assertSedeAccess`, o sin filtrar por `sedeId` / `sede: { centroId }` en el `where`.
 - Las consultas directas a `sede` o `user` filtran siempre por `centroId: user.centroId`.
 - Excepción: **Configuracion** (cobranza) sí cuelga del centro, una fila por centro y vale para todas sus sedes. Se lee con `obtenerConfiguracion(user.centroId)` (`@/lib/configuracion`).
+- Igual **PlantillaFicha**: la estructura de las fichas clínicas es propia de cada centro (ver abajo).
 
 ## Sesión y alcance (`@/lib/session`)
 ```ts
@@ -58,9 +59,27 @@ Formularios: `useFormReintento` (`@/components/form-reintento`) conserva lo escr
 Helpers (`@/lib/utils`): `cn`, `soles(x)`, `fecha(d)`, `edad(fechaNac)`, `nombreCompleto({nombres,apellidoPaterno,apellidoMaterno})`, `iniciales(nombre)`.
 Para impresión: envuelve lo imprimible en `<div className="print-area">` y oculta botones con `className="no-print"` (CSS ya definido en globals.css).
 
+## Fichas clínicas: la estructura la pone el centro, no el código
+La historia clínica, la ficha de evaluación y el informe de avance **no tienen columnas por campo**: su estructura es una plantilla editable por centro, y eso es lo que permite que el sistema sirva a terapia psicológica y a terapia física con el mismo código.
+
+```ts
+import { obtenerPlantilla } from "@/lib/plantillas";        // (centroId, tipo) -> plantilla vigente, memoizada
+import { normalizarValores } from "@/lib/fichas/valores";   // sanea lo guardado contra la plantilla
+import { FichaForm } from "@/components/ficha/ficha-form";  // formulario genérico
+import { FichaVista } from "@/components/ficha/ficha-vista";// vista y formato impreso
+```
+- Tipos de campo (`@/lib/fichas/tipos`): `texto`, `parrafo`, `casilla`, `opciones`, `tabla` y `checklist` con escala configurable. Un grupo puede mostrarse solo bajo condición (`visibleSi`).
+- **Historia clínica**: expediente vivo, sigue la plantilla **vigente** del centro.
+- **Evaluación e informe**: **congelan** la plantilla con la que se aplicaron (`estructura`), porque son instrumentos fechados y firmados; se actualizan solo si el profesional lo pide (`reconciliar`, `@/lib/fichas/snapshot`).
+- Lo registrado con campos que luego se quitan de la plantilla **nunca se borra**: queda como huérfano y se muestra aparte.
+- Los ids de campo e ítem son **estables e inmutables**: la analítica de progreso compara los informes por id. `src/lib/fichas/base/base.test.ts` lo protege.
+- Plantillas base prearmadas en `@/lib/fichas/base` (`psicologica`, `fisica`); se eligen al dar de alta el centro.
+
 ## Modelo de datos (resumen; ver schema.prisma para el detalle)
 - **Centro**(id,codigo,nombre,subtitulo,activo). **Sede**(id,centroId,nombre,…), `@@unique([centroId, nombre])`.
 - **Configuracion**(centroId @id,graciaTipo,graciaValor,diasAvisoCobro): plazo de pago de los paquetes del centro. Se edita en Configuración › Cobranza y la usa /pagos/cobranza.
+- **PlantillaFicha**(centroId,tipo,base,version,secciones Json), `@@unique([centroId, tipo])`: estructura de cada ficha clínica del centro.
+- **HistoriaClinica**(id,sedeId,pacienteId @unique,fecha,valores Json). **Evaluacion**(id,sedeId,pacienteId,evaluadorId?,fecha,estructura Json,valores Json,plantillaVersion,programaRecomendado?,recomendaciones?). **InformeAvance**(id,sedeId,pacienteId,evaluadorId?,fecha,secciones Json,recomendaciones?).
 - **User**(id,centroId?,nombre,usuario,email?,rol,activo), `@@unique([centroId, usuario])`. `centroId` es null solo para SUPERADMIN.
 - **Terapeuta**(id,sedeId,nombres,apellidos,especialidad).
 - **Paciente**(id,sedeId,nombres,apellidoPaterno,apellidoMaterno,dni,fechaNacimiento,sexo,telefono,correo,direccion,distrito,fotoUrl,programa,diagnostico,estado,observaciones) 1—n **Apoderado**(pacienteId,nombres,apellidos,dni,telefono,correo,vinculo,principal).
@@ -68,4 +87,4 @@ Para impresión: envuelve lo imprimible en `<div className="print-area">` y ocul
 - **Cita**(id,sedeId,pacienteId,terapeutaId?,paqueteId?,numeroSesion?,fecha,horaInicio:"09:00",horaFin,tipo,estado,asistencia,terapiaRealizada?,observacion?,recordatorioEnviado).
 - **Pago**(id,sedeId,pacienteId,paqueteId?,numeroRecibo,concepto,descripcion?,monto,saldo,metodoPago,referencia?,fechaPago). Único: `@@unique([sedeId, numeroRecibo])`.
 
-Enums: `Rol(SUPERADMIN,ADMINISTRADOR,COORDINADOR,USUARIO)`, `Sexo(M,F)`, `EstadoPaciente(ACTIVO,BAJA)`, `Programa(ESCOLAR,INTERDIARIO,TERAPIAS)`, `Vinculo(MADRE,PADRE,APODERADO,OTRO)`, `TipoCita(CONSULTA,EVALUACION,SESION)`, `EstadoCita(AGENDADA,ATENDIDA,CANCELADA)`, `Asistencia(PENDIENTE,ASISTIO,FALTO,TARDANZA)`, `EstadoPaquete(ACTIVO,COMPLETADO,VENCIDO,ANULADO)`, `ConceptoPago(MATRICULA,MATERIALES,MENSUALIDAD,PAQUETE_SESIONES,EVALUACION,OTRO)`, `MetodoPago(EFECTIVO,YAPE,PLIN,TRANSFERENCIA,TARJETA)`, `TipoGracia(PORCENTAJE,DIAS)`.
+Enums: `Rol(SUPERADMIN,ADMINISTRADOR,COORDINADOR,USUARIO)`, `Sexo(M,F)`, `EstadoPaciente(ACTIVO,BAJA)`, `Programa(ESCOLAR,INTERDIARIO,TERAPIAS)`, `Vinculo(MADRE,PADRE,APODERADO,OTRO)`, `TipoCita(CONSULTA,EVALUACION,SESION)`, `EstadoCita(AGENDADA,ATENDIDA,CANCELADA)`, `Asistencia(PENDIENTE,ASISTIO,FALTO,TARDANZA)`, `EstadoPaquete(ACTIVO,COMPLETADO,VENCIDO,ANULADO)`, `ConceptoPago(MATRICULA,MATERIALES,MENSUALIDAD,PAQUETE_SESIONES,EVALUACION,OTRO)`, `MetodoPago(EFECTIVO,YAPE,PLIN,TRANSFERENCIA,TARJETA)`, `TipoGracia(PORCENTAJE,DIAS)`, `TipoFicha(HISTORIA,EVALUACION,INFORME)`.

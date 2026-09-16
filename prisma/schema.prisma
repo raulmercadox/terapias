@@ -310,9 +310,12 @@ model Paciente {
   @@index([dni])
 }
 
-// Ficha de Evaluación inicial: la aplica un especialista cuando el paciente
-// llega por primera vez. Réplica del formato impreso del centro (secciones
-// I–X) y concluye con el tipo de programa recomendado.
+// Ficha de Evaluación: la aplica un especialista en una fecha concreta. Su
+// estructura la define la plantilla EVALUACION del centro (ver src/lib/fichas),
+// pero a diferencia de la historia clínica el registro CONGELA la plantilla con
+// la que se aplicó (`estructura`): es un instrumento fechado y firmado, y
+// releerlo con una plantilla posterior —otro enunciado, otra escala— sería un
+// error clínico. Se actualiza solo si el profesional lo pide expresamente.
 model Evaluacion {
   id          String   @id @default(cuid())
   sedeId      String
@@ -320,49 +323,16 @@ model Evaluacion {
   evaluadorId String?
   fecha       DateTime @default(now())
 
-  // I. Datos complementarios (nombres, edad, sexo, dirección… viven en Paciente)
-  lugarNacimiento String?
-  numeroHermanos  String?
-  nivelAcademico  String?
-  centroEducativo String?
+  // Copia de la plantilla vigente al crear la ficha, y los valores registrados.
+  estructura       Json @default("{}")
+  valores          Json @default("{}")
+  // Versión de la plantilla del centro con la que se aplicó, para avisar
+  // cuando la ficha quedó atrás de la vigente.
+  plantillaVersion Int  @default(0)
 
-  // II. Relación del menor con las personas que convive
-  conviveMadre    Boolean @default(false)
-  convivePadre    Boolean @default(false)
-  conviveHermanos Boolean @default(false)
-  conviveOtros    String?
-  relacionDetalle String?
-
-  // III. Historia personal
-  diagnostico          String?
-  medicacion           String?
-  terapiasRealiza      String?
-  dificultadesDormir   String?
-  dificultadesComer    String?
-  dificultadesPresenta String?
-
-  // IV. Antecedentes escolares
-  preescolar            String?
-  escolar               String?
-  comportamientoAula    String?
-  rendimientoEscolar    String?
-  dificultadesEscolares String?
-
-  // V–IX. Checklists de áreas, keyed por id de ítem del catálogo
-  // (pacientes/[id]/evaluaciones/ficha.ts):
-  // { [itemId]: { valor?: "I"|"P"|"L"|"SI"|"NO", obs?: string } }
-  resultados Json @default("{}")
-
-  // VI. Modalidad de lenguaje: "VERBAL" | "NO_VERBAL"
-  modalidadLenguaje    String?
-  // VIII–IX. Observaciones libres de área
-  observacionSensorial String? // hipo – híper sensibilidad
-  observacionMotriz    String? // presenta problemas motrices
-
-  // X. Observación durante la evaluación
-  observacionGeneral String?
-
-  // Resultado de la evaluación
+  // Estructurales: no son campos del formulario sino datos que SALEN de la
+  // ficha hacia el resto del sistema. programaRecomendado alimenta
+  // Paciente.programa y su dominio es el enum Programa, no texto libre.
   programaRecomendado Programa?
   recomendaciones     String?
 

@@ -1,7 +1,41 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AREAS_FICHA } from "../../../app/(app)/pacientes/[id]/evaluaciones/ficha";
 import { SECCIONES_DEFECTO } from "../../../app/(app)/pacientes/[id]/informes/informe";
+
+// Ids e identificadores de áreas del catálogo fijo `evaluaciones/ficha.ts`, que
+// la plantilla psicológica reemplazó. Se congelan aquí como copia literal
+// porque aquel archivo ya no existe y esta lista es la última defensa contra un
+// renombrado accidental: la analítica de progreso compara por id de ítem.
+const AREAS_ORIGINALES = [
+  "conductual",
+  "lenguaje",
+  "cognitiva",
+  "sensorial",
+  "psicomotricidad",
+];
+
+const IDS_ORIGINALES = [
+  // V. Área conductual
+  "cond_contacto_visual", "cond_respuesta_estimulo", "cond_respuesta_nombre",
+  "cond_mirada_sostenida", "cond_saluda_despide", "cond_parate_sientate",
+  "cond_dame_toma", "cond_guarda_recoge", "cond_ven_vamos", "cond_lleva_dale",
+  "cond_senala", "cond_solicita_pide", "cond_cambio_actividad",
+  "cond_retiro_estimulo", "cond_cambio_rutina", "cond_intereses_restringidos",
+  "cond_perm_mesa", "cond_perm_actividad", "cond_perm_con_estimulo",
+  "cond_perm_sin_estimulo", "cond_espera_con_actividad", "cond_espera_sin_actividad",
+  // VI. Área de lenguaje
+  "leng_onomatopeyicos", "leng_ecolalia", "leng_contacto_visual",
+  "leng_comprende_social", "leng_imitacion", "leng_comprende_indicaciones",
+  "leng_asocia_imagenes",
+  // VII. Área cognitiva
+  "cog_numeros", "cog_vocales", "cog_colores", "cog_formas", "cog_figura_fondo",
+  "cog_grande_pequeno", "cog_largo_corto", "cog_grueso_delgado", "cog_pocos_muchos",
+  "cog_atencion_sostenida", "cog_atencion_espontaneo", "cog_atencion_disperso",
+  // VIII. Área sensorial
+  "sens_seco", "sens_humedo", "sens_suave", "sens_sonidos_fuertes", "sens_integracion",
+  // IX. Psicomotricidad
+  "psic_imita", "psic_equilibrio", "psic_circuito", "psic_frustra", "psic_fina",
+];
 import { camposDe, idsDuplicados, normalizarPlantilla } from "../plantilla";
 import type { Plantilla } from "../tipos";
 import { PSICOLOGICA } from "./psicologica";
@@ -84,12 +118,9 @@ test("toda escala declarada tiene etiqueta para cada valor", () => {
 // fijo del que sale. Si alguien renombra un id al editar estos archivos, este
 // test lo detiene antes de romper la serie histórica de los pacientes.
 
-test("la evaluación psicológica conserva los ids de AREAS_FICHA", () => {
-  const originales = AREAS_FICHA.flatMap((a) =>
-    a.grupos.flatMap((g) => g.items.map((i) => i.id)),
-  ).sort();
+test("la evaluación psicológica conserva los ids del catálogo original", () => {
   const migrados = idsDeItems(PSICOLOGICA.EVALUACION).sort();
-  assert.deepEqual(migrados, originales);
+  assert.deepEqual(migrados, [...IDS_ORIGINALES].sort());
 });
 
 test("el informe psicológico conserva los ids de SECCIONES_DEFECTO", () => {
@@ -110,21 +141,11 @@ test("el informe psicológico conserva los textos de los ítems", () => {
   }
 });
 
-test("la evaluación psicológica conserva los textos y el orden de las áreas", () => {
-  const original = new Map(
-    AREAS_FICHA.flatMap((a) => a.grupos.flatMap((g) => g.items.map((i) => [i.id, i.label] as const))),
-  );
-  for (const campo of camposDe(PSICOLOGICA.EVALUACION)) {
-    if (campo.tipo !== "checklist") continue;
-    for (const item of campo.items) {
-      assert.equal(item.label, original.get(item.id), `cambió el texto de ${item.id}`);
-    }
-  }
-  // Las cinco áreas del formato impreso siguen estando, en su orden.
+test("la evaluación psicológica conserva las cinco áreas en su orden", () => {
   const seccionesArea = PSICOLOGICA.EVALUACION.secciones
     .filter((s) => s.grupos.some((g) => g.campos.some((c) => c.tipo === "checklist")))
     .map((s) => s.id);
-  assert.deepEqual(seccionesArea, AREAS_FICHA.map((a) => a.id));
+  assert.deepEqual(seccionesArea, AREAS_ORIGINALES);
 });
 
 test("la plantilla física no arrastra terminología psicológica", () => {

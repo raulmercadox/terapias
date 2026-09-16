@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { PageHeader } from "@/components/ui";
+import { PageHeader, Field, Select } from "@/components/ui";
 import { nombreCompleto, edad, hoyLima } from "@/lib/utils";
-import { EvaluacionForm } from "../evaluacion-form";
+import { obtenerPlantilla } from "@/lib/plantillas";
+import { FichaForm } from "@/components/ficha/ficha-form";
 import { crearEvaluacion } from "../actions";
+import { ProgramaRecomendado } from "../programa-recomendado";
 
 export default async function NuevaEvaluacionPage({
   params,
@@ -29,11 +31,14 @@ export default async function NuevaEvaluacionPage({
   });
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
-  const terapeutas = await prisma.terapeuta.findMany({
-    where: { sedeId: paciente.sedeId, activo: true },
-    orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
-    select: { id: true, nombres: true, apellidos: true },
-  });
+  const [terapeutas, { plantilla }] = await Promise.all([
+    prisma.terapeuta.findMany({
+      where: { sedeId: paciente.sedeId, activo: true },
+      orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
+      select: { id: true, nombres: true, apellidos: true },
+    }),
+    obtenerPlantilla(user.centroId, "EVALUACION"),
+  ]);
 
   const accion = crearEvaluacion.bind(null, paciente.id);
 
@@ -44,18 +49,33 @@ export default async function NuevaEvaluacionPage({
         subtitle={`${nombreCompleto(paciente)} · ${edad(paciente.fechaNacimiento)}`}
       />
       <div className="max-w-4xl">
-        <EvaluacionForm
-          action={accion}
-          terapeutas={terapeutas.map((t) => ({
-            id: t.id,
-            nombre: `${t.nombres} ${t.apellidos}`.trim(),
-          }))}
-          inicial={{
-            fecha: hoyLima(),
-            // Precarga el Dx registrado en la ficha del paciente, si existe.
-            diagnostico: paciente.diagnostico,
-          }}
+        <FichaForm
+          plantilla={plantilla}
+          // Precarga el Dx registrado en la ficha del paciente, si la plantilla
+          // tiene un campo con ese id.
+          valores={
+            paciente.diagnostico
+              ? { diagnostico: { t: "texto", v: paciente.diagnostico } }
+              : undefined
+          }
+          fecha={hoyLima()}
+          etiquetaFecha="Fecha de evaluación"
+          accion={accion}
           cancelarHref={`/pacientes/${paciente.id}`}
+          textoGuardar="Guardar evaluación"
+          extra={
+            <Field label="Evaluador(a)">
+              <Select name="evaluadorId" defaultValue="">
+                <option value="">— Seleccione —</option>
+                {terapeutas.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {`${t.nombres} ${t.apellidos}`.trim()}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          }
+          pie={plantilla.muestraProgramaRecomendado ? <ProgramaRecomendado /> : undefined}
         />
       </div>
     </div>

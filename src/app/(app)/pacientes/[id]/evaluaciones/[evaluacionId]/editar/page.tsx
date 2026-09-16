@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { PageHeader } from "@/components/ui";
+import { PageHeader, Field, Select } from "@/components/ui";
 import { nombreCompleto, fecha, fechaInput } from "@/lib/utils";
-import { EvaluacionForm } from "../../evaluacion-form";
+import { normalizarPlantilla } from "@/lib/fichas/plantilla";
+import { normalizarValores } from "@/lib/fichas/valores";
+import { FichaForm } from "@/components/ficha/ficha-form";
 import { actualizarEvaluacion } from "../../actions";
-import { normalizarResultados } from "../../ficha";
+import { ProgramaRecomendado } from "../../programa-recomendado";
 
 export default async function EditarEvaluacionPage({
   params,
@@ -38,6 +40,9 @@ export default async function EditarEvaluacionPage({
     select: { id: true, nombres: true, apellidos: true },
   });
 
+  // Se edita con la plantilla CONGELADA en la ficha, no con la vigente del
+  // centro: corregir una evaluación no debe reinterpretarla con otra escala.
+  const estructura = normalizarPlantilla(evaluacion.estructura);
   const accion = actualizarEvaluacion.bind(null, evaluacion.id);
 
   return (
@@ -49,44 +54,34 @@ export default async function EditarEvaluacionPage({
         )}`}
       />
       <div className="max-w-4xl">
-        <EvaluacionForm
-          action={accion}
-          terapeutas={terapeutas.map((t) => ({
-            id: t.id,
-            nombre: `${t.nombres} ${t.apellidos}`.trim(),
-          }))}
-          inicial={{
-            fecha: fechaInput(evaluacion.fecha),
-            evaluadorId: evaluacion.evaluadorId,
-            lugarNacimiento: evaluacion.lugarNacimiento,
-            numeroHermanos: evaluacion.numeroHermanos,
-            nivelAcademico: evaluacion.nivelAcademico,
-            centroEducativo: evaluacion.centroEducativo,
-            conviveMadre: evaluacion.conviveMadre,
-            convivePadre: evaluacion.convivePadre,
-            conviveHermanos: evaluacion.conviveHermanos,
-            conviveOtros: evaluacion.conviveOtros,
-            relacionDetalle: evaluacion.relacionDetalle,
-            diagnostico: evaluacion.diagnostico,
-            medicacion: evaluacion.medicacion,
-            terapiasRealiza: evaluacion.terapiasRealiza,
-            dificultadesDormir: evaluacion.dificultadesDormir,
-            dificultadesComer: evaluacion.dificultadesComer,
-            dificultadesPresenta: evaluacion.dificultadesPresenta,
-            preescolar: evaluacion.preescolar,
-            escolar: evaluacion.escolar,
-            comportamientoAula: evaluacion.comportamientoAula,
-            rendimientoEscolar: evaluacion.rendimientoEscolar,
-            dificultadesEscolares: evaluacion.dificultadesEscolares,
-            resultados: normalizarResultados(evaluacion.resultados),
-            modalidadLenguaje: evaluacion.modalidadLenguaje,
-            observacionSensorial: evaluacion.observacionSensorial,
-            observacionMotriz: evaluacion.observacionMotriz,
-            observacionGeneral: evaluacion.observacionGeneral,
-            programaRecomendado: evaluacion.programaRecomendado,
-            recomendaciones: evaluacion.recomendaciones,
-          }}
+        <FichaForm
+          plantilla={estructura}
+          valores={normalizarValores(evaluacion.valores, estructura)}
+          fecha={fechaInput(evaluacion.fecha)}
+          etiquetaFecha="Fecha de evaluación"
+          accion={accion}
           cancelarHref={`/pacientes/${evaluacion.paciente.id}/evaluaciones/${evaluacion.id}`}
+          textoGuardar="Guardar evaluación"
+          extra={
+            <Field label="Evaluador(a)">
+              <Select name="evaluadorId" defaultValue={evaluacion.evaluadorId ?? ""}>
+                <option value="">— Seleccione —</option>
+                {terapeutas.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {`${t.nombres} ${t.apellidos}`.trim()}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          }
+          pie={
+            estructura.muestraProgramaRecomendado ? (
+              <ProgramaRecomendado
+                programaRecomendado={evaluacion.programaRecomendado}
+                recomendaciones={evaluacion.recomendaciones}
+              />
+            ) : undefined
+          }
         />
       </div>
     </div>

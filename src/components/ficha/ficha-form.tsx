@@ -29,6 +29,7 @@ export function FichaForm({
   cancelarHref,
   textoGuardar,
   extra,
+  pie,
 }: {
   plantilla: Plantilla;
   valores?: ValoresFicha;
@@ -39,6 +40,8 @@ export function FichaForm({
   textoGuardar: string;
   /** Campos propios de la ficha que no vienen de la plantilla (ej. evaluador). */
   extra?: ReactNode;
+  /** Bloque final propio de la ficha (ej. el programa recomendado). */
+  pie?: ReactNode;
 }) {
   const {
     estado: state,
@@ -138,6 +141,8 @@ export function FichaForm({
           </div>
         </Card>
       ))}
+
+      {pie}
 
       <div className="flex items-center justify-end gap-3">
         <ButtonLink href={cancelarHref} variant="secondary">
