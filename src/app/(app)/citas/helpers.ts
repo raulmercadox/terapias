@@ -1,4 +1,5 @@
 import type { EstadoCita, Asistencia, TipoCita } from "@prisma/client";
+import { aMinutos, aHHMM, type Refrigerio } from "../sesiones/horario";
 
 /* ── Semana (lunes–domingo) ───────────────────────────── */
 
@@ -80,6 +81,101 @@ export const TIPO_LABEL: Record<TipoCita, string> = {
   EVALUACION: "Evaluación",
   SESION: "Sesión",
 };
+
+/* ── Vista consolidada (bloques libres / ocupados) ────── */
+
+export type TipoBloque = "ocupado" | "libre" | "refrigerio";
+
+/** Tramo continuo del día de un terapeuta. `citas` solo cuenta en los ocupados. */
+export type Bloque = {
+  inicio: string;
+  fin: string;
+  tipo: TipoBloque;
+  citas: number;
+};
+
+/** Horario de atención de un día laborable (null = no se atiende ese día). */
+export type Jornada = {
+  apertura: string;
+  cierre: string;
+  refrigerio: Refrigerio | null;
+};
+
+type Tramo = [number, number];
+
+/** Quita de [a, b) cada uno de los `cortes`; devuelve lo que sobra, en orden. */
+function restar([a, b]: Tramo, cortes: Tramo[]): Tramo[] {
+  let tramos: Tramo[] = a < b ? [[a, b]] : [];
+  for (const [c, d] of cortes) {
+    tramos = tramos.flatMap(([x, y]): Tramo[] => {
+      if (d <= x || c >= y) return [[x, y]];
+      const out: Tramo[] = [];
+      if (c > x) out.push([x, c]);
+      if (d < y) out.push([d, y]);
+      return out;
+    });
+  }
+  return tramos;
+}
+
+/**
+ * Resume el día de un terapeuta en bloques continuos. Las citas que se tocan o
+ * se solapan (9:00–9:45 y 9:45–10:30, o dos grupales a la misma hora) forman un
+ * solo bloque ocupado; lo que queda de la jornada es libre, salvo el refrigerio.
+ * Las citas fuera del horario de atención se muestran igual como ocupadas.
+ * Sin jornada (día no laborable o feriado) solo hay bloques ocupados.
+ */
+export function consolidarDia(
+  citas: { horaInicio: string; horaFin: string }[],
+  jornada: Jornada | null,
+): Bloque[] {
+  const ocupados: { ini: number; fin: number; citas: number }[] = [];
+  const tramos = citas
+    .map((c): Tramo => [aMinutos(c.horaInicio), aMinutos(c.horaFin)])
+    .filter(([i, f]) => !Number.isNaN(i) && !Number.isNaN(f) && f > i)
+    .sort((x, y) => x[0] - y[0]);
+  for (const [i, f] of tramos) {
+    const ultimo = ocupados.at(-1);
+    if (ultimo && i <= ultimo.fin) {
+      ultimo.fin = Math.max(ultimo.fin, f);
+      ultimo.citas++;
+    } else {
+      ocupados.push({ ini: i, fin: f, citas: 1 });
+    }
+  }
+
+  const bloques: Bloque[] = ocupados.map((o) => ({
+    inicio: aHHMM(o.ini),
+    fin: aHHMM(o.fin),
+    tipo: "ocupado",
+    citas: o.citas,
+  }));
+  const agregar = (tipo: TipoBloque) => ([x, y]: Tramo) =>
+    bloques.push({ inicio: aHHMM(x), fin: aHHMM(y), tipo, citas: 0 });
+
+  const apertura = jornada ? aMinutos(jornada.apertura) : NaN;
+  const cierre = jornada ? aMinutos(jornada.cierre) : NaN;
+  if (!Number.isNaN(apertura) && !Number.isNaN(cierre)) {
+    const cortes = ocupados.map((o): Tramo => [o.ini, o.fin]);
+    const r = jornada!.refrigerio;
+    const refrigerio: Tramo | null = r
+      ? [aMinutos(r.inicio), aMinutos(r.fin)]
+      : null;
+    restar(
+      [apertura, cierre],
+      refrigerio ? [...cortes, refrigerio] : cortes,
+    ).forEach(agregar("libre"));
+    // Si una cita invade el refrigerio, esa parte se ve ocupada.
+    if (refrigerio) {
+      restar(
+        [Math.max(refrigerio[0], apertura), Math.min(refrigerio[1], cierre)],
+        cortes,
+      ).forEach(agregar("refrigerio"));
+    }
+  }
+
+  return bloques.sort((a, b) => a.inicio.localeCompare(b.inicio));
+}
 
 /* ── Teléfono / WhatsApp (Perú) ───────────────────────── */
 

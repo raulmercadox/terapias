@@ -10,8 +10,10 @@ import {
   Badge,
   Field,
 } from "@/components/ui";
-import { fecha, nombreCompleto } from "@/lib/utils";
+import { cn, fecha, nombreCompleto } from "@/lib/utils";
+import { refrigerioDe } from "../sesiones/horario";
 import {
+  consolidarDia,
   lunesDeLaSemana,
   parseFechaISO,
   aISO,
@@ -24,15 +26,16 @@ import {
   TIPO_LABEL,
 } from "./helpers";
 import { FiltroTerapeuta } from "./filtro-terapeuta";
+import { VistaConsolidada, type ColumnaDia } from "./vista-consolidada";
 
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ semana?: string; terapeutaId?: string }>;
+  searchParams: Promise<{ semana?: string; terapeutaId?: string; vista?: string }>;
 }) {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
-  const { semana, terapeutaId } = await searchParams;
+  const { semana, terapeutaId, vista } = await searchParams;
 
   const lunes = lunesDeLaSemana(parseFechaISO(semana) ?? new Date());
   const dias = diasDeLaSemana(lunes);
@@ -45,8 +48,12 @@ export default async function AgendaPage({
 
   const terapeutaFiltro =
     terapeutaId && terapeutaId.length > 0 ? terapeutaId : undefined;
+  // La consolidada solo tiene sentido para un terapeuta: con todos juntos no se
+  // distingue quién está libre. La preferencia se conserva en la URL.
+  const pideConsolidada = vista === "consolidada";
+  const consolidada = pideConsolidada && !!terapeutaFiltro;
 
-  const [terapeutas, citas] = await Promise.all([
+  const [terapeutas, citas, sede, feriados] = await Promise.all([
     prisma.terapeuta.findMany({
       where: { sedeId, activo: true },
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
@@ -70,6 +77,24 @@ export default async function AgendaPage({
         terapeuta: { select: { nombres: true, apellidos: true } },
       },
     }),
+    consolidada
+      ? prisma.sede.findUnique({
+          where: { id: sedeId },
+          select: {
+            horaApertura: true,
+            horaCierre: true,
+            refrigerioInicio: true,
+            refrigerioFin: true,
+            diasLaborales: true,
+          },
+        })
+      : null,
+    consolidada
+      ? prisma.feriado.findMany({
+          where: { sedeId, fecha: { gte: rangoInicio, lt: rangoFin } },
+          select: { fecha: true },
+        })
+      : [],
   ]);
 
   // Agrupa por día (clave "YYYY-MM-DD" local).
@@ -81,8 +106,40 @@ export default async function AgendaPage({
     porDia.set(key, arr);
   }
 
-  const baseParams = (s: string) =>
-    `?semana=${s}${terapeutaFiltro ? `&terapeutaId=${terapeutaFiltro}` : ""}`;
+  const hoyISO = aISO(new Date());
+  const esFeriado = new Set(feriados.map((f) => aISO(f.fecha)));
+  const refrigerio = sede
+    ? refrigerioDe(sede.refrigerioInicio, sede.refrigerioFin)
+    : null;
+  const columnas: ColumnaDia[] = dias.map((dia) => {
+    const key = aISO(dia);
+    const nota = esFeriado.has(key)
+      ? "Feriado"
+      : sede && !sede.diasLaborales.includes(dia.getDay())
+        ? "No laborable"
+        : undefined;
+    // Una cita cancelada libera su horario.
+    const activas = (porDia.get(key) ?? []).filter((c) => c.estado !== "CANCELADA");
+    return {
+      key,
+      fecha: fecha(dia),
+      esHoy: key === hoyISO,
+      nota,
+      bloques: consolidarDia(
+        activas,
+        sede && !nota
+          ? { apertura: sede.horaApertura, cierre: sede.horaCierre, refrigerio }
+          : null,
+      ),
+    };
+  });
+
+  const baseParams = (s: string, v = pideConsolidada) =>
+    `?semana=${s}${terapeutaFiltro ? `&terapeutaId=${terapeutaFiltro}` : ""}${
+      v ? "&vista=consolidada" : ""
+    }`;
+
+  const tabBase = "px-3 py-1.5 text-sm font-medium transition-colors";
 
   return (
     <div className="space-y-6">
@@ -103,10 +160,46 @@ export default async function AgendaPage({
           <ButtonLink href={`/citas${baseParams(semanaSiguiente)}`} variant="secondary">
             Siguiente →
           </ButtonLink>
+
+          <div
+            className="ml-2 inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white"
+            role="group"
+            aria-label="Vista"
+          >
+            <Link
+              href={`/citas${baseParams(aISO(lunes), false)}`}
+              className={cn(
+                tabBase,
+                !consolidada ? "bg-slate-800 text-white" : "text-slate-700 hover:bg-slate-50",
+              )}
+            >
+              Detallada
+            </Link>
+            {terapeutaFiltro ? (
+              <Link
+                href={`/citas${baseParams(aISO(lunes), true)}`}
+                className={cn(
+                  tabBase,
+                  "border-l border-slate-300",
+                  consolidada ? "bg-slate-800 text-white" : "text-slate-700 hover:bg-slate-50",
+                )}
+              >
+                Consolidada
+              </Link>
+            ) : (
+              <span
+                title="Elige un terapeuta para ver sus horarios libres y ocupados"
+                className={cn(tabBase, "cursor-not-allowed border-l border-slate-300 text-slate-400")}
+              >
+                Consolidada
+              </span>
+            )}
+          </div>
         </div>
 
         <Form action="/citas" replace scroll={false} className="flex items-end gap-2">
           <input type="hidden" name="semana" value={aISO(lunes)} />
+          {pideConsolidada && <input type="hidden" name="vista" value="consolidada" />}
           <Field label="Terapeuta" className="w-60">
             {/* key: al "Limpiar" o cambiar la URL, el select se remonta con el valor nuevo */}
             <FiltroTerapeuta
@@ -133,11 +226,14 @@ export default async function AgendaPage({
         </Form>
       </div>
 
+      {consolidada ? (
+        <VistaConsolidada columnas={columnas} />
+      ) : (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {dias.map((dia, i) => {
           const key = aISO(dia);
           const items = porDia.get(key) ?? [];
-          const esHoy = key === aISO(new Date());
+          const esHoy = key === hoyISO;
           return (
             <Card key={key} className={esHoy ? "ring-2 ring-sky-400" : undefined}>
               <div className="mb-3 flex items-baseline justify-between">
@@ -190,8 +286,9 @@ export default async function AgendaPage({
           );
         })}
       </div>
+      )}
 
-      {citas.length === 0 && (
+      {!consolidada && citas.length === 0 && (
         <EmptyState message="No hay citas en esta semana para la sede activa." />
       )}
     </div>
