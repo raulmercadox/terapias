@@ -20,6 +20,7 @@ Sistema **Terapias** — multitenant para centros de terapia.
 - Todo lo demás (pacientes, citas, pagos…) cuelga de `sedeId`. **No hay `centroId` en esas tablas**: el aislamiento consiste en validar que la sede pertenece al centro del usuario.
 - Por eso: **nunca** leas o escribas un registro por `id` sin comprobar después su `sedeId` con `canAccessSede`/`assertSedeAccess`, o sin filtrar por `sedeId` / `sede: { centroId }` en el `where`.
 - Las consultas directas a `sede` o `user` filtran siempre por `centroId: user.centroId`.
+- Excepción: **Configuracion** (cobranza) sí cuelga del centro, una fila por centro y vale para todas sus sedes. Se lee con `obtenerConfiguracion(user.centroId)` (`@/lib/configuracion`).
 
 ## Sesión y alcance (`@/lib/session`)
 ```ts
@@ -59,6 +60,7 @@ Para impresión: envuelve lo imprimible en `<div className="print-area">` y ocul
 
 ## Modelo de datos (resumen; ver schema.prisma para el detalle)
 - **Centro**(id,codigo,nombre,subtitulo,activo). **Sede**(id,centroId,nombre,…), `@@unique([centroId, nombre])`.
+- **Configuracion**(centroId @id,graciaTipo,graciaValor,diasAvisoCobro): plazo de pago de los paquetes del centro. Se edita en Configuración › Cobranza y la usa /pagos/cobranza.
 - **User**(id,centroId?,nombre,usuario,email?,rol,activo), `@@unique([centroId, usuario])`. `centroId` es null solo para SUPERADMIN.
 - **Terapeuta**(id,sedeId,nombres,apellidos,especialidad).
 - **Paciente**(id,sedeId,nombres,apellidoPaterno,apellidoMaterno,dni,fechaNacimiento,sexo,telefono,correo,direccion,distrito,fotoUrl,programa,diagnostico,estado,observaciones) 1—n **Apoderado**(pacienteId,nombres,apellidos,dni,telefono,correo,vinculo,principal).
@@ -66,4 +68,4 @@ Para impresión: envuelve lo imprimible en `<div className="print-area">` y ocul
 - **Cita**(id,sedeId,pacienteId,terapeutaId?,paqueteId?,numeroSesion?,fecha,horaInicio:"09:00",horaFin,tipo,estado,asistencia,terapiaRealizada?,observacion?,recordatorioEnviado).
 - **Pago**(id,sedeId,pacienteId,paqueteId?,numeroRecibo,concepto,descripcion?,monto,saldo,metodoPago,referencia?,fechaPago). Único: `@@unique([sedeId, numeroRecibo])`.
 
-Enums: `Rol(SUPERADMIN,ADMINISTRADOR,COORDINADOR,USUARIO)`, `Sexo(M,F)`, `EstadoPaciente(ACTIVO,BAJA)`, `Programa(ESCOLAR,INTERDIARIO,TERAPIAS)`, `Vinculo(MADRE,PADRE,APODERADO,OTRO)`, `TipoCita(CONSULTA,EVALUACION,SESION)`, `EstadoCita(AGENDADA,ATENDIDA,CANCELADA)`, `Asistencia(PENDIENTE,ASISTIO,FALTO,TARDANZA)`, `EstadoPaquete(ACTIVO,COMPLETADO,VENCIDO,ANULADO)`, `ConceptoPago(MATRICULA,MATERIALES,MENSUALIDAD,PAQUETE_SESIONES,EVALUACION,OTRO)`, `MetodoPago(EFECTIVO,YAPE,PLIN,TRANSFERENCIA,TARJETA)`.
+Enums: `Rol(SUPERADMIN,ADMINISTRADOR,COORDINADOR,USUARIO)`, `Sexo(M,F)`, `EstadoPaciente(ACTIVO,BAJA)`, `Programa(ESCOLAR,INTERDIARIO,TERAPIAS)`, `Vinculo(MADRE,PADRE,APODERADO,OTRO)`, `TipoCita(CONSULTA,EVALUACION,SESION)`, `EstadoCita(AGENDADA,ATENDIDA,CANCELADA)`, `Asistencia(PENDIENTE,ASISTIO,FALTO,TARDANZA)`, `EstadoPaquete(ACTIVO,COMPLETADO,VENCIDO,ANULADO)`, `ConceptoPago(MATRICULA,MATERIALES,MENSUALIDAD,PAQUETE_SESIONES,EVALUACION,OTRO)`, `MetodoPago(EFECTIVO,YAPE,PLIN,TRANSFERENCIA,TARJETA)`, `TipoGracia(PORCENTAJE,DIAS)`.

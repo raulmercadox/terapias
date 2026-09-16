@@ -125,8 +125,28 @@ model Centro {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sedes    Sede[]
-  usuarios User[]
+  sedes         Sede[]
+  usuarios      User[]
+  configuracion Configuracion?
+}
+
+// Cómo se calcula el plazo para pagar un paquete (periodo de gracia).
+enum TipoGracia {
+  PORCENTAJE // % de los días entre la primera y la última sesión originales
+  DIAS // días fijos desde la primera sesión
+}
+
+// Configuración de cobranza del centro: una fila por centro y vale para todas
+// sus sedes. Sin fila rigen los valores por defecto (ver src/lib/configuracion.ts).
+model Configuracion {
+  centroId       String     @id
+  graciaTipo     TipoGracia @default(PORCENTAJE)
+  graciaValor    Int        @default(50)
+  // Con cuántos días de anticipación un pago cuenta como "por vencer".
+  diasAvisoCobro Int        @default(7)
+  updatedAt      DateTime   @updatedAt
+
+  centro Centro @relation(fields: [centroId], references: [id], onDelete: Cascade)
 }
 
 model Sede {
@@ -603,19 +623,19 @@ model Pago {
 // ENTRADA posterior a su última SALIDA con resultado CONTACTADO.
 // La regla vive en seguimiento/seguimiento.ts.
 model Interaccion {
-  id         String               @id @default(cuid())
-  sedeId     String
-  pacienteId String
-  direccion  DireccionInteraccion
-  canal      CanalInteraccion     @default(LLAMADA)
-  fecha      DateTime             @default(now()) // fecha y hora reales del contacto
-  resultado  ResultadoSalida? // solo SALIDA
-  nota       String?
-  autor      String? // nombre del usuario que la registró
+  id           String               @id @default(cuid())
+  sedeId       String
+  pacienteId   String
+  direccion    DireccionInteraccion
+  canal        CanalInteraccion     @default(LLAMADA)
+  fecha        DateTime             @default(now()) // fecha y hora reales del contacto
+  resultado    ResultadoSalida? // solo SALIDA
+  nota         String?
+  autor        String? // nombre del usuario que la registró
   // Entrada creada sola al registrar la ficha de evaluación de un paciente
   // sin paquete. Se borra con la evaluación.
   evaluacionId String?              @unique
-  createdAt  DateTime             @default(now())
+  createdAt    DateTime             @default(now())
 
   sede       Sede        @relation(fields: [sedeId], references: [id])
   paciente   Paciente    @relation(fields: [pacienteId], references: [id], onDelete: Cascade)

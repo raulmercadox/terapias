@@ -529,6 +529,53 @@ export async function guardarHorarioLaboral(
 }
 
 /* ════════════════════════════════════════════════════════
+ * COBRANZA (una fila por centro, vale para todas sus sedes)
+ * ════════════════════════════════════════════════════════ */
+
+const cobranzaSchema = z
+  .object({
+    graciaTipo: z.enum(["PORCENTAJE", "DIAS"], "Elija el tipo de periodo de gracia."),
+    graciaValor: z.coerce.number().int("El periodo de gracia debe ser un número entero."),
+    diasAvisoCobro: z.coerce
+      .number()
+      .int("Los días de aviso deben ser un número entero.")
+      .min(0, "Los días de aviso van de 0 a 60.")
+      .max(60, "Los días de aviso van de 0 a 60."),
+  })
+  .refine(
+    (d) => d.graciaTipo !== "PORCENTAJE" || (d.graciaValor >= 1 && d.graciaValor <= 100),
+    { message: "El porcentaje debe estar entre 1 y 100.", path: ["graciaValor"] },
+  )
+  .refine((d) => d.graciaTipo !== "DIAS" || (d.graciaValor >= 0 && d.graciaValor <= 180), {
+    message: "Los días fijos deben estar entre 0 y 180.",
+    path: ["graciaValor"],
+  });
+
+export async function guardarConfiguracionCobranza(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const parsed = cobranzaSchema.safeParse({
+    graciaTipo: formData.get("graciaTipo"),
+    graciaValor: formData.get("graciaValor"),
+    diasAvisoCobro: formData.get("diasAvisoCobro"),
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  await prisma.configuracion.upsert({
+    where: { centroId },
+    create: { centroId, ...parsed.data },
+    update: parsed.data,
+  });
+
+  revalidatePath("/configuracion/cobranza");
+  revalidatePath("/pagos/cobranza");
+  redirect("/configuracion/cobranza?ok=1");
+}
+
+/* ════════════════════════════════════════════════════════
  * FERIADOS (por sede)
  * ════════════════════════════════════════════════════════ */
 

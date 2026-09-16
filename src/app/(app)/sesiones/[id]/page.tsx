@@ -10,7 +10,16 @@ import {
   Td,
   Badge,
 } from "@/components/ui";
-import { soles, fecha, nombreCompleto } from "@/lib/utils";
+import { soles, fecha, nombreCompleto, hoyLima } from "@/lib/utils";
+import { obtenerConfiguracion } from "@/lib/configuracion";
+import { claveFecha } from "../horario";
+import {
+  COBRO_COLOR,
+  evaluarCobro,
+  fechaDeISO,
+  reglaDeConfiguracion,
+  textoCobro,
+} from "../../pagos/cobranza";
 import {
   estadoPaqueteColor,
   estadoPaqueteLabel,
@@ -78,6 +87,32 @@ export default async function PaqueteDetallePage({
     nombre: `${t.apellidos}, ${t.nombres}`,
   }));
 
+  // Estado de pago (solo para quien ve montos): saldo y plazo según Cobranza,
+  // que se configura por centro.
+  const [pagado, config] = veMontos
+    ? await Promise.all([
+        prisma.pago.aggregate({ where: { paqueteId: paquete.id }, _sum: { monto: true } }),
+        obtenerConfiguracion(user.centroId),
+      ])
+    : [null, null];
+  const hoy = hoyLima();
+  const cobro =
+    pagado && config
+      ? {
+          pagado: Number(pagado._sum.monto ?? 0),
+          ...evaluarCobro(
+            {
+              precio: Number(paquete.precio),
+              pagado: Number(pagado._sum.monto ?? 0),
+              fechaInicio: paquete.fechaInicio ? claveFecha(paquete.fechaInicio) : null,
+              fechaFin: paquete.fechaFin ? claveFecha(paquete.fechaFin) : null,
+            },
+            reglaDeConfiguracion(config),
+            hoy,
+          ),
+        }
+      : null;
+
   const usadas = paquete.citas.filter(
     (c) => c.asistencia !== "PENDIENTE",
   ).length;
@@ -111,6 +146,29 @@ export default async function PaqueteDetallePage({
             </Dato>
             <Dato label="Restantes">{restantes}</Dato>
             {veMontos && <Dato label="Precio">{soles(paquete.precio)}</Dato>}
+            {cobro && (
+              <>
+                <Dato label="Pagado">{soles(cobro.pagado)}</Dato>
+                <Dato label="Saldo">
+                  {cobro.saldo > 0 ? (
+                    soles(cobro.saldo)
+                  ) : (
+                    <Badge color="green">Pagado</Badge>
+                  )}
+                </Dato>
+                {cobro.saldo > 0 && cobro.limiteISO && (
+                  <Dato label="Fecha límite de pago">
+                    {cobro.estado ? (
+                      <Badge color={COBRO_COLOR[cobro.estado]}>
+                        {textoCobro(cobro.estado, cobro.limiteISO, hoy)}
+                      </Badge>
+                    ) : (
+                      fechaDeISO(cobro.limiteISO)
+                    )}
+                  </Dato>
+                )}
+              </>
+            )}
             <Dato label="Inicio">{fecha(paquete.fechaInicio)}</Dato>
             <Dato label="Fin estimado">{fecha(paquete.fechaFin)}</Dato>
           </div>

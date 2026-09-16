@@ -9,23 +9,7 @@ import {
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
 import { normalizarTelefonoPe } from "../../../citas/helpers";
 import { PrintActions } from "./print-button";
-
-const METODO_LABEL: Record<string, string> = {
-  EFECTIVO: "Efectivo",
-  YAPE: "Yape",
-  PLIN: "Plin",
-  TRANSFERENCIA: "Transferencia",
-  TARJETA: "Tarjeta",
-};
-
-const CONCEPTO_LABEL: Record<string, string> = {
-  MATRICULA: "Matrícula",
-  MATERIALES: "Materiales",
-  MENSUALIDAD: "Mensualidad",
-  PAQUETE_SESIONES: "Paquete de sesiones",
-  EVALUACION: "Evaluación",
-  OTRO: "Otro",
-};
+import { CONCEPTO_LABEL, METODO_LABEL } from "../../etiquetas";
 
 const FECHA_HORA = new Intl.DateTimeFormat("es-PE", {
   day: "2-digit",

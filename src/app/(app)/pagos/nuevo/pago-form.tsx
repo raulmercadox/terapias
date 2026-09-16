@@ -51,10 +51,13 @@ export function PagoForm({
   pacientes,
   paquetes,
   hoy,
+  inicial,
 }: {
   pacientes: PacienteOpt[];
   paquetes: PaqueteOpt[];
   hoy: string;
+  /** Paciente y paquete ya elegidos (al llegar desde Cobranza). */
+  inicial?: { pacienteId?: string; paqueteId?: string };
 }) {
   const {
     estado: state,
@@ -62,8 +65,8 @@ export function PagoForm({
     formProps,
     formKey,
   } = useFormReintento<RegistrarPagoState>(registrarPago, initialState);
-  const [pacienteId, setPacienteId] = useState("");
-  const [paqueteId, setPaqueteId] = useState("");
+  const [pacienteId, setPacienteId] = useState(inicial?.pacienteId ?? "");
+  const [paqueteId, setPaqueteId] = useState(inicial?.paqueteId ?? "");
   const [monto, setMonto] = useState("");
 
   const paquetesPaciente = useMemo(

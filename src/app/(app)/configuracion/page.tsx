@@ -44,6 +44,12 @@ export default async function ConfiguracionPage() {
       href: "/configuracion/feriados",
       icon: "📅",
     },
+    {
+      label: "Cobranza",
+      descripcion: "Periodo de gracia para el pago de paquetes y aviso previo.",
+      href: "/configuracion/cobranza",
+      icon: "💳",
+    },
   ];
 
   return (

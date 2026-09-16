@@ -12,7 +12,8 @@ export function WhatsAppButton({
   marcarEnviado = true,
   children = "Recordar por WhatsApp",
 }: {
-  citaId: string;
+  /** Cita a marcar como recordada; solo hace falta si `marcarEnviado`. */
+  citaId?: string;
   /** Teléfono ya normalizado (solo dígitos, con prefijo país). null si no hay. */
   telefono: string | null;
   mensaje: string;
@@ -34,7 +35,7 @@ export function WhatsAppButton({
 
   function handleClick() {
     window.open(url, "_blank", "noopener,noreferrer");
-    if (marcarEnviado) {
+    if (marcarEnviado && citaId) {
       const fd = new FormData();
       fd.set("id", citaId);
       startTransition(() => {

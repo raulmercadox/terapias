@@ -13,137 +13,31 @@ import {
   Paginacion,
 } from "@/components/ui";
 import { soles, fecha, nombreCompleto } from "@/lib/utils";
+import { CONCEPTO_LABEL, METODO_LABEL } from "./etiquetas";
+import { filtrosDePagos, type ParamsPagos } from "./filtros";
+import { cobranzaDeSede } from "./consultas-cobranza";
 
 const POR_PAGINA = 20;
-
-const METODO_LABEL: Record<string, string> = {
-  EFECTIVO: "Efectivo",
-  YAPE: "Yape",
-  PLIN: "Plin",
-  TRANSFERENCIA: "Transferencia",
-  TARJETA: "Tarjeta",
-};
-
-const CONCEPTO_LABEL: Record<string, string> = {
-  MATRICULA: "Matrícula",
-  MATERIALES: "Materiales",
-  MENSUALIDAD: "Mensualidad",
-  PAQUETE_SESIONES: "Paquete de sesiones",
-  EVALUACION: "Evaluación",
-  OTRO: "Otro",
-};
-
-/** Devuelve "YYYY-MM" del mes actual. */
-function mesActual(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Rango [desde, hasta) a partir de un parámetro "YYYY-MM". */
-function rangoDeMes(mes: string): { desde: Date; hasta: Date } | null {
-  const m = mes.match(/^(\d{4})-(\d{2})$/);
-  if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  if (month < 1 || month > 12) return null;
-  const desde = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const hasta = new Date(year, month, 1, 0, 0, 0, 0);
-  return { desde, hasta };
-}
-
-/** Inicio del día de un "YYYY-MM-DD" (o fin si esFin: día siguiente). */
-function fechaParam(valor: string | undefined, esFin = false): Date | null {
-  if (!valor) return null;
-  const m = valor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
-  if (Number.isNaN(d.getTime())) return null;
-  if (esFin) d.setDate(d.getDate() + 1); // exclusivo
-  return d;
-}
 
 export default async function PagosPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    mes?: string;
-    desde?: string;
-    hasta?: string;
-    q?: string;
-    pacienteId?: string;
-    pagina?: string;
-  }>;
+  searchParams: Promise<ParamsPagos & { pagina?: string }>;
 }) {
   const user = await requireUser();
   if (!puedeVerPagos(user)) notFound();
   const sedeId = await requireActiveSede(user);
   const sp = await searchParams;
-  const termino = (sp.q ?? "").trim();
-
-  // Filtro directo por paciente (llegando desde su ficha con ?pacienteId=).
-  const pacienteFiltrado = sp.pacienteId
-    ? await prisma.paciente.findFirst({
-        where: { id: sp.pacienteId, sedeId },
-        select: {
-          id: true,
-          nombres: true,
-          apellidoPaterno: true,
-          apellidoMaterno: true,
-        },
-      })
-    : null;
-
-  // Filtro: si hay desde/hasta toma prioridad el rango; si no, por mes.
-  const desdeParam = fechaParam(sp.desde);
-  const hastaParam = fechaParam(sp.hasta, true);
-  const usaRango = Boolean(desdeParam || hastaParam);
-
-  const mes = sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : mesActual();
-  const rango = rangoDeMes(mes);
-
-  let fechaFilter: { gte?: Date; lt?: Date };
-  let etiquetaPeriodo: string;
-
-  if (usaRango) {
-    fechaFilter = {};
-    if (desdeParam) fechaFilter.gte = desdeParam;
-    if (hastaParam) fechaFilter.lt = hastaParam;
-    etiquetaPeriodo = `Del ${sp.desde ?? "inicio"} al ${sp.hasta ?? "hoy"}`;
-  } else if (pacienteFiltrado && !sp.mes) {
-    // Desde la ficha del paciente se muestra todo su historial de pagos.
-    fechaFilter = {};
-    etiquetaPeriodo = "Todo el historial";
-  } else {
-    fechaFilter = { gte: rango!.desde, lt: rango!.hasta };
-    etiquetaPeriodo = new Intl.DateTimeFormat("es-PE", {
-      month: "long",
-      year: "numeric",
-    }).format(rango!.desde);
-  }
-
-  // Búsqueda por paciente (nombre, apellidos o DNI), insensible a mayúsculas.
-  const pacienteFilter = pacienteFiltrado
-    ? { pacienteId: pacienteFiltrado.id }
-    : termino
-      ? {
-          paciente: {
-            OR: [
-              { nombres: { contains: termino, mode: "insensitive" as const } },
-              { apellidoPaterno: { contains: termino, mode: "insensitive" as const } },
-              { apellidoMaterno: { contains: termino, mode: "insensitive" as const } },
-              { dni: { contains: termino, mode: "insensitive" as const } },
-            ],
-          },
-        }
-      : {};
-
-  const where = { sedeId, fechaPago: fechaFilter, ...pacienteFilter };
+  const { where, termino, pacienteFiltrado, mes, usaRango, etiquetaPeriodo } =
+    await filtrosDePagos(sp, sedeId);
 
   // Total y suma del periodo completo (no solo de la página visible).
-  const [totalRegistros, agregado] = await Promise.all([
+  const [totalRegistros, agregado, cobranza] = await Promise.all([
     prisma.pago.count({ where }),
     prisma.pago.aggregate({ where, _sum: { monto: true } }),
+    cobranzaDeSede(sedeId, user.centroId),
   ]);
+  const vencidos = cobranza.vencidos.length;
   const totalPaginas = Math.max(1, Math.ceil(totalRegistros / POR_PAGINA));
   const paginaPedida = Number.parseInt(sp.pagina ?? "1", 10);
   const pagina = Number.isNaN(paginaPedida)
@@ -172,13 +66,14 @@ export default async function PagosPage({
 
   const total = Number(agregado._sum.monto ?? 0);
 
-  // Query params a conservar al cambiar de página.
+  // Query params a conservar al cambiar de página (y al descargar el Excel).
   const paramsPaginacion: Record<string, string> = {};
   if (pacienteFiltrado) paramsPaginacion.pacienteId = pacienteFiltrado.id;
   else if (termino) paramsPaginacion.q = termino;
   if (sp.mes) paramsPaginacion.mes = sp.mes;
   if (sp.desde) paramsPaginacion.desde = sp.desde;
   if (sp.hasta) paramsPaginacion.hasta = sp.hasta;
+  const qsExportar = new URLSearchParams(paramsPaginacion).toString();
 
   return (
     <>
@@ -186,9 +81,28 @@ export default async function PagosPage({
         title="Pagos"
         subtitle={`Recibos internos — ${etiquetaPeriodo}`}
         actions={
-          <ButtonLink href="/pagos/nuevo" variant="primary">
-            Registrar pago
-          </ButtonLink>
+          <>
+            {totalRegistros > 0 && (
+              // <a> y no <Link>: es una descarga, no una navegación.
+              <a
+                href={`/pagos/exportar${qsExportar ? `?${qsExportar}` : ""}`}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Descargar Excel
+              </a>
+            )}
+            <ButtonLink href="/pagos/cobranza" variant="secondary">
+              Cobranza
+              {vencidos > 0 && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                  {vencidos} vencido{vencidos === 1 ? "" : "s"}
+                </span>
+              )}
+            </ButtonLink>
+            <ButtonLink href="/pagos/nuevo" variant="primary">
+              Registrar pago
+            </ButtonLink>
+          </>
         }
       />
 

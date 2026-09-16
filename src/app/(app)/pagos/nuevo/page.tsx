@@ -13,14 +13,24 @@ function hoyISO(): string {
   ).padStart(2, "0")}`;
 }
 
-export default async function NuevoPagoPage() {
+export default async function NuevoPagoPage({
+  searchParams,
+}: {
+  // Desde Cobranza se llega con el paciente y el paquete ya elegidos.
+  searchParams: Promise<{ pacienteId?: string; paqueteId?: string }>;
+}) {
   const user = await requireUser();
   if (!puedeVerPagos(user)) notFound();
   const sedeId = await requireActiveSede(user);
+  const sp = await searchParams;
 
   const [pacientesRaw, paquetesRaw, pagosPorPaquete] = await Promise.all([
     prisma.paciente.findMany({
-      where: { sedeId, estado: "ACTIVO" },
+      where: {
+        sedeId,
+        // El paciente precargado entra aunque ya no esté activo (puede deber).
+        OR: [{ estado: "ACTIVO" }, ...(sp.pacienteId ? [{ id: sp.pacienteId }] : [])],
+      },
       orderBy: [{ apellidoPaterno: "asc" }, { nombres: "asc" }],
       select: {
         id: true,
@@ -29,8 +39,9 @@ export default async function NuevoPagoPage() {
         apellidoMaterno: true,
       },
     }),
+    // No anulados: un paquete completado que todavía debe también se cobra.
     prisma.paquete.findMany({
-      where: { sedeId, estado: "ACTIVO" },
+      where: { sedeId, estado: { not: "ANULADO" } },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -38,6 +49,7 @@ export default async function NuevoPagoPage() {
         totalSesiones: true,
         precio: true,
         fechaInicio: true,
+        estado: true,
       },
     }),
     // Total ya pagado por cada paquete de la sede (para calcular el saldo).
@@ -57,15 +69,31 @@ export default async function NuevoPagoPage() {
     nombre: nombreCompleto(p),
   }));
 
-  const paquetes = paquetesRaw.map((p) => ({
-    id: p.id,
-    pacienteId: p.pacienteId,
-    precio: Number(p.precio),
-    pagado: pagadoPorPaquete.get(p.id) ?? 0,
-    etiqueta: `${p.totalSesiones} sesiones · ${soles(p.precio)}${
-      p.fechaInicio ? ` · ${fecha(p.fechaInicio)}` : ""
-    }`,
-  }));
+  const paquetes = paquetesRaw
+    // Activos, más los que no están activos pero tienen saldo pendiente.
+    .filter(
+      (p) =>
+        p.estado === "ACTIVO" || (pagadoPorPaquete.get(p.id) ?? 0) < Number(p.precio),
+    )
+    .map((p) => ({
+      id: p.id,
+      pacienteId: p.pacienteId,
+      precio: Number(p.precio),
+      pagado: pagadoPorPaquete.get(p.id) ?? 0,
+      etiqueta: `${p.totalSesiones} sesiones · ${soles(p.precio)}${
+        p.fechaInicio ? ` · ${fecha(p.fechaInicio)}` : ""
+      }`,
+    }));
+
+  // Solo se precarga lo que existe en las listas (y el paquete, si es del paciente).
+  const pacienteInicial = pacientes.some((p) => p.id === sp.pacienteId)
+    ? sp.pacienteId
+    : undefined;
+  const paqueteInicial = paquetes.some(
+    (p) => p.id === sp.paqueteId && p.pacienteId === pacienteInicial,
+  )
+    ? sp.paqueteId
+    : undefined;
 
   return (
     <>
@@ -77,7 +105,12 @@ export default async function NuevoPagoPage() {
       {pacientes.length === 0 ? (
         <EmptyState message="No hay pacientes activos en esta sede. Registra un paciente antes de cobrar." />
       ) : (
-        <PagoForm pacientes={pacientes} paquetes={paquetes} hoy={hoyISO()} />
+        <PagoForm
+          pacientes={pacientes}
+          paquetes={paquetes}
+          hoy={hoyISO()}
+          inicial={{ pacienteId: pacienteInicial, paqueteId: paqueteInicial }}
+        />
       )}
     </>
   );
