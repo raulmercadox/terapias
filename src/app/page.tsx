@@ -1,5 +1,9 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
+// Fotos de Unsplash (licencia libre, sin atribución obligatoria).
+import fotoPortada from "./_fotos/portada.webp";
+import fotoSesion from "./_fotos/sesion.webp";
 
 // Portada pública de terapias.codart.pe. Vive fuera del grupo (app), así que no
 // pasa por requireUser() y la ve cualquier visitante. El panel está en /panel.
@@ -123,35 +127,44 @@ export default async function PortadaPage() {
       {/* ── Portada ───────────────────────────────────────────────────────── */}
       <section id="inicio" className="relative overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-sky-50 to-white" />
-        <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-700">
-            Para terapia física y psicológica
-          </span>
-          <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
-            La gestión de tu centro,
-            <br className="hidden sm:block" /> sin perder el hilo de ningún paciente
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-slate-600">
-            Fichas clínicas que configuras a tu medida, agenda por terapeuta, paquetes de
-            sesiones y control de pagos. Con todas tus sedes en una sola cuenta.
-          </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a
-              href="#contacto"
-              className="w-full rounded-lg bg-sky-600 px-6 py-3 text-center font-semibold text-white shadow-sm hover:bg-sky-700 sm:w-auto"
-            >
-              Solicitar una demo
-            </a>
-            <Link
-              href="/login"
-              className="w-full rounded-lg border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-800 hover:bg-slate-50 sm:w-auto"
-            >
-              Ya soy cliente
-            </Link>
+        <div className="mx-auto grid max-w-6xl gap-12 px-6 pt-20 pb-16 lg:grid-cols-2 lg:items-center">
+          <div className="text-center lg:text-left">
+            <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-700">
+              Para terapia física y psicológica
+            </span>
+            <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+              La gestión de tu centro,
+              <br className="hidden sm:block lg:hidden" /> sin perder el hilo de ningún paciente
+            </h1>
+            <p className="mx-auto mt-5 max-w-2xl text-lg text-slate-600 lg:mx-0">
+              Fichas clínicas que configuras a tu medida, agenda por terapeuta, paquetes de
+              sesiones y control de pagos. Con todas tus sedes en una sola cuenta.
+            </p>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row lg:justify-start">
+              <a
+                href="#contacto"
+                className="w-full rounded-lg bg-sky-600 px-6 py-3 text-center font-semibold text-white shadow-sm hover:bg-sky-700 sm:w-auto"
+              >
+                Solicitar una demo
+              </a>
+              <Link
+                href="/login"
+                className="w-full rounded-lg border border-slate-300 bg-white px-6 py-3 text-center font-semibold text-slate-800 hover:bg-slate-50 sm:w-auto"
+              >
+                Ya soy cliente
+              </Link>
+            </div>
+            <p className="mt-4 text-xs text-slate-400">
+              Sin instalaciones · Se usa desde el navegador
+            </p>
           </div>
-          <p className="mt-4 text-xs text-slate-400">
-            Sin instalaciones · Se usa desde el navegador
-          </p>
+          <Image
+            src={fotoPortada}
+            alt="Una terapeuta física trabaja la rodilla de un paciente en la camilla"
+            preload
+            sizes="(min-width: 1024px) 560px, (min-width: 640px) 576px, 100vw"
+            className="mx-auto aspect-[16/10] w-full max-w-xl rounded-3xl object-cover shadow-xl lg:aspect-[4/3]"
+          />
         </div>
       </section>
 
@@ -190,13 +203,21 @@ export default async function PortadaPage() {
               El sistema se adapta a cómo trabajas, no al revés.
             </p>
           </div>
-          <div className="mt-12 grid gap-8 md:grid-cols-3">
-            {RAZONES.map((r) => (
-              <div key={r.titulo} className="text-center">
-                <h3 className="font-semibold text-slate-900">{r.titulo}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{r.texto}</p>
-              </div>
-            ))}
+          <div className="mt-12 grid gap-10 lg:grid-cols-2 lg:items-center">
+            <Image
+              src={fotoSesion}
+              alt="Sesión de terapia psicológica: la terapeuta toma notas mientras escucha a su paciente"
+              sizes="(min-width: 1024px) 560px, 100vw"
+              className="aspect-[16/10] w-full rounded-3xl object-cover shadow-lg lg:aspect-[4/3]"
+            />
+            <div className="grid gap-8">
+              {RAZONES.map((r) => (
+                <div key={r.titulo} className="border-l-4 border-sky-200 pl-5">
+                  <h3 className="font-semibold text-slate-900">{r.titulo}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">{r.texto}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
