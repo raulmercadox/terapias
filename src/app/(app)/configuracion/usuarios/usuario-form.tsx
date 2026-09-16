@@ -164,6 +164,12 @@ export function UsuarioForm({
           />
           Usuario activo
         </label>
+        {/* Un control deshabilitado no se envía con el formulario. Sin este
+            hidden, `activo` llegaba ausente —es decir, false— y la guarda de
+            autodesactivación rechazaba el guardado aunque solo se quisiera
+            cambiar la clave. Mismo patrón que el <Select> de rol. El valor
+            "on" es el que compara parseUsuarioForm. */}
+        {esPropio && <input type="hidden" name="activo" value="on" />}
         {esPropio && (
           <p className="mt-1 text-xs text-slate-500">
             No puedes desactivar ni cambiar el rol de tu propia cuenta.
