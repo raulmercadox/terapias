@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
-    "demo": "tsx prisma/demo.ts"
+    "demo": "tsx prisma/demo.ts",
+    "reset-superadmin": "tsx prisma/reset-superadmin.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
