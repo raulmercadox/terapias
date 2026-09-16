@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SECCIONES_DEFECTO, type SeccionInforme } from "../informes/informe";
+import { type SeccionInforme } from "../informes/informe";
 import {
   MAX_PUNTOS,
   compararInformes,
@@ -92,9 +92,11 @@ test("serieProgreso normaliza el Json crudo del informe", () => {
     { id: "a", fecha: new Date("2026-03-01"), secciones: "corrupto" },
   ]);
 
-  // normalizarSecciones repone la plantilla completa, sin calificaciones.
-  assert.equal(punto.areas.length, SECCIONES_DEFECTO.length);
+  // El informe es la fuente de verdad de su estructura: un Json corrupto no se
+  // completa con ninguna plantilla, queda sin áreas.
+  assert.deepEqual(punto.areas, []);
   assert.equal(punto.general.calificados, 0);
+  assert.equal(punto.general.total, 0);
   assert.equal(punto.general.logro, null);
 });
 

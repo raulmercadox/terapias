@@ -3,7 +3,12 @@ import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { nombreCompleto, edad, fecha, hoyLima } from "@/lib/utils";
-import { normalizarSecciones, seccionesSinValores } from "../informe";
+import { obtenerPlantilla } from "@/lib/plantillas";
+import {
+  normalizarSecciones,
+  seccionesDePlantilla,
+  seccionesSinValores,
+} from "../informe";
 import { InformeForm } from "../informe-form";
 import { crearInforme } from "../actions";
 
@@ -36,8 +41,8 @@ export default async function NuevoInformePage({
   });
 
   // El informe nuevo parte del último informe del paciente —sus ítems y textos,
-  // con las calificaciones en blanco— y solo cae en la plantilla si es el
-  // primero. Además de ahorrar retipeo, es lo que mantiene comparables los
+  // con las calificaciones en blanco— y solo cae en la plantilla del centro si
+  // es el primero. Además de ahorrar retipeo, es lo que mantiene comparables los
   // ítems agregados a mano: llevan un id propio que se perdería al reiniciar
   // desde la plantilla, y sin ese id no hay serie de progreso (ver
   // progreso/progreso.ts).
@@ -46,6 +51,11 @@ export default async function NuevoInformePage({
     orderBy: [{ fecha: "desc" }, { createdAt: "desc" }],
     select: { fecha: true, secciones: true },
   });
+
+  const { plantilla } = await obtenerPlantilla(user.centroId, "INFORME");
+  const secciones = anterior
+    ? seccionesSinValores(normalizarSecciones(anterior.secciones))
+    : seccionesDePlantilla(plantilla);
 
   const accion = crearInforme.bind(null, paciente.id);
 
@@ -69,12 +79,7 @@ export default async function NuevoInformePage({
             id: t.id,
             nombre: `${t.nombres} ${t.apellidos}`.trim(),
           }))}
-          inicial={{
-            fecha: hoyLima(),
-            secciones: anterior
-              ? seccionesSinValores(normalizarSecciones(anterior.secciones))
-              : undefined,
-          }}
+          inicial={{ fecha: hoyLima(), secciones }}
           cancelarHref={`/pacientes/${paciente.id}`}
         />
       </div>

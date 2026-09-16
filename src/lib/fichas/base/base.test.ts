@@ -1,7 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SECCIONES_DEFECTO } from "../../../app/(app)/pacientes/[id]/informes/informe";
-
 // Ids e identificadores de áreas del catálogo fijo `evaluaciones/ficha.ts`, que
 // la plantilla psicológica reemplazó. Se congelan aquí como copia literal
 // porque aquel archivo ya no existe y esta lista es la última defensa contra un
@@ -123,22 +121,31 @@ test("la evaluación psicológica conserva los ids del catálogo original", () =
   assert.deepEqual(migrados, [...IDS_ORIGINALES].sort());
 });
 
-test("el informe psicológico conserva los ids de SECCIONES_DEFECTO", () => {
-  const originales = SECCIONES_DEFECTO.flatMap((s) => s.items.map((i) => i.id)).sort();
+// Ids del catálogo fijo `informes/informe.ts` (SECCIONES_DEFECTO), congelados
+// aquí por el mismo motivo: son los que empareja la analítica de progreso entre
+// informes sucesivos de un paciente.
+const IDS_INFORME_ORIGINALES = [
+  "len_comprensivo", "len_articulado", "len_narrativo", "len_tema",
+  "ped_nociones_espaciales", "ped_colores", "ped_figuras", "ped_partes_cuerpo",
+  "ped_motricidad_fina", "ped_motricidad_gruesa", "ped_secuencia_imagenes",
+  "ped_material_concreto", "ped_sensoriales", "ped_columpio",
+  "aut_lavado_manos", "aut_espera_material", "aut_sigue_indicaciones",
+  "aut_sentado_lonchera", "aut_necesidades_fisiologicas", "aut_tolerancia_cambios",
+  "aut_deberes_aula", "aut_juegos_reglas",
+  "soc_saluda_despide", "soc_interactua", "soc_actividades_grupo",
+  "soc_respeta_turnos", "soc_interes_jugar", "soc_contacto_visual",
+];
+
+test("el informe psicológico conserva los ids del catálogo original", () => {
   const migrados = idsDeItems(PSICOLOGICA.INFORME).sort();
-  assert.deepEqual(migrados, originales);
+  assert.deepEqual(migrados, [...IDS_INFORME_ORIGINALES].sort());
 });
 
-test("el informe psicológico conserva los textos de los ítems", () => {
-  const original = new Map(
-    SECCIONES_DEFECTO.flatMap((s) => s.items.map((i) => [i.id, i.label] as const)),
+test("el informe psicológico conserva sus cuatro secciones en orden", () => {
+  assert.deepEqual(
+    PSICOLOGICA.INFORME.secciones.map((s) => s.id),
+    ["lenguaje", "pedagogica", "autonomia", "social"],
   );
-  for (const campo of camposDe(PSICOLOGICA.INFORME)) {
-    if (campo.tipo !== "checklist") continue;
-    for (const item of campo.items) {
-      assert.equal(item.label, original.get(item.id), `cambió el texto de ${item.id}`);
-    }
-  }
 });
 
 test("la evaluación psicológica conserva las cinco áreas en su orden", () => {

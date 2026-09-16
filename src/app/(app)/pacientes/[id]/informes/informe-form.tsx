@@ -15,7 +15,6 @@ import type { FormState } from "./actions";
 import {
   VALORES_INFORME,
   VALOR_LABEL,
-  seccionesIniciales,
   type SeccionInforme,
   type ValorInforme,
 } from "./informe";
@@ -25,14 +24,15 @@ type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
 export type InformeInicial = {
   fecha?: string; // yyyy-mm-dd
   evaluadorId?: string | null;
-  secciones?: SeccionInforme[];
+  /** Secciones del informe: del informe anterior, o de la plantilla del centro. */
+  secciones: SeccionInforme[];
   recomendaciones?: string | null;
 };
 
 /**
  * Una sección del informe: tabla de ítems con texto editable y las columnas
- * EI / EP / LE. Las secciones son fijas; los ítems se pueden editar, agregar
- * y quitar en cada informe.
+ * EI / EP / LE. Las secciones vienen de la plantilla del centro (o del informe
+ * anterior); los ítems se pueden editar, agregar y quitar en cada informe.
  */
 function TablaSeccion({
   seccion,
@@ -46,7 +46,13 @@ function TablaSeccion({
   // Ids para los ítems que se agreguen aquí. No colisionan con los del
   // catálogo porque llevan prefijo propio.
   const prefijo = useId();
-  const [siguiente, setSiguiente] = useState(0);
+  // El contador arranca DESPUÉS de los ítems ad-hoc que ya trae el informe: al
+  // editar uno que ya tiene un "nuevo_<prefijo>_0", useId() devuelve el mismo
+  // prefijo y un contador desde 0 volvería a generar ese id. Dos ítems con el
+  // mismo id se confunden en la analítica, que empareja por id.
+  const [siguiente, setSiguiente] = useState(
+    () => seccion.items.filter((i) => i.id.startsWith("nuevo_")).length,
+  );
 
   function agregar() {
     setItems([
@@ -58,6 +64,11 @@ function TablaSeccion({
 
   return (
     <div className="space-y-3">
+      {/* La sección viaja con el formulario: el servidor ya no las toma de un
+          catálogo fijo, porque cada centro tiene su plantilla. */}
+      <input type="hidden" name="seccion_id" value={seccion.id} />
+      <input type="hidden" name="seccion_titulo" value={seccion.titulo} />
+
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
           <thead>
@@ -183,7 +194,7 @@ export function InformeForm({
 }: {
   action: Action;
   terapeutas: { id: string; nombre: string }[];
-  inicial?: InformeInicial;
+  inicial: InformeInicial;
   cancelarHref: string;
 }) {
   const {
@@ -193,8 +204,7 @@ export function InformeForm({
     formKey,
     valorEn,
   } = useFormReintento<FormState>(action, {});
-  const v = inicial ?? {};
-  const secciones = v.secciones ?? seccionesIniciales();
+  const secciones = inicial.secciones;
 
   return (
     <form key={formKey} {...formProps} className="space-y-6">
@@ -207,10 +217,15 @@ export function InformeForm({
       <Card>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fecha de informe" required>
-            <Input type="date" name="fecha" defaultValue={v.fecha ?? ""} required />
+            <Input
+              type="date"
+              name="fecha"
+              defaultValue={inicial.fecha ?? ""}
+              required
+            />
           </Field>
           <Field label="Profesional que informa">
-            <Select name="evaluadorId" defaultValue={v.evaluadorId ?? ""}>
+            <Select name="evaluadorId" defaultValue={inicial.evaluadorId ?? ""}>
               <option value="">— Sin asignar —</option>
               {terapeutas.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -226,14 +241,23 @@ export function InformeForm({
         </p>
       </Card>
 
-      {secciones.map((s) => (
-        <Card key={s.id}>
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            {s.titulo}
-          </h2>
-          <TablaSeccion seccion={s} valorEn={valorEn} />
+      {secciones.length === 0 ? (
+        <Card>
+          <p className="text-sm text-slate-600">
+            La plantilla de informes de este centro no tiene secciones todavía.
+            Configúrala en Configuración › Fichas clínicas.
+          </p>
         </Card>
-      ))}
+      ) : (
+        secciones.map((s) => (
+          <Card key={s.id}>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              {s.titulo}
+            </h2>
+            <TablaSeccion seccion={s} valorEn={valorEn} />
+          </Card>
+        ))
+      )}
 
       <Card>
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -242,7 +266,7 @@ export function InformeForm({
         <Textarea
           name="recomendaciones"
           rows={6}
-          defaultValue={v.recomendaciones ?? ""}
+          defaultValue={inicial.recomendaciones ?? ""}
         />
       </Card>
 

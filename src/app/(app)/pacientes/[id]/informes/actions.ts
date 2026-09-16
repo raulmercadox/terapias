@@ -3,10 +3,10 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, assertSedeAccess, assertRolGestion } from "@/lib/session";
 import {
-  SECCIONES_DEFECTO,
   VALORES_INFORME,
   normalizarSecciones,
   type SeccionInforme,
@@ -41,24 +41,34 @@ function parseCampos(formData: FormData) {
 /**
  * Reconstruye las secciones desde el FormData.
  *
- * Cada ítem viaja como tres campos paralelos por sección, alineados por índice
- * igual que la tabla de familiares de la historia clínica:
+ * Las secciones ya no salen de un catálogo fijo en el código: cada centro tiene
+ * su plantilla y cada informe guarda la suya, así que las manda el propio
+ * formulario en `seccion_id` / `seccion_titulo`. Dentro de cada sección, los
+ * ítems viajan como tres campos paralelos alineados por índice:
  *   item_id_<seccionId>, item_label_<seccionId>, item_valor_<seccionId>
  *
- * El texto es editable, así que no se valida contra el catálogo: lo que llega
- * es la fuente de verdad. Se descartan los ítems con el texto vacío (así se
- * borra una fila) y los valores fuera de EI/EP/LE.
+ * El texto es editable, así que no se valida contra nada: lo que llega es la
+ * fuente de verdad. Se descartan los ítems con el texto vacío (así se borra una
+ * fila) y los valores fuera de EI/EP/LE.
  *
  * `item_valor_*` se envía siempre, incluso sin marcar, porque un grupo de
  * radios sin selección no aparece en el FormData y desalinearía los índices.
  */
 function parseSecciones(formData: FormData): SeccionInforme[] {
-  const secciones = SECCIONES_DEFECTO.map((base) => {
-    const ids = formData.getAll(`item_id_${base.id}`);
-    const labels = formData.getAll(`item_label_${base.id}`);
-    const valores = formData.getAll(`item_valor_${base.id}`);
+  const ids = formData.getAll("seccion_id").map(String);
+  const titulos = formData.getAll("seccion_titulo").map(String);
 
-    const items = ids.flatMap((idBruto, i) => {
+  const vistas = new Set<string>();
+  const secciones = ids.flatMap((sid, k) => {
+    // Una sección repetida haría que getAll mezclara los ítems de ambas.
+    if (!sid || vistas.has(sid)) return [];
+    vistas.add(sid);
+
+    const itemIds = formData.getAll(`item_id_${sid}`);
+    const labels = formData.getAll(`item_label_${sid}`);
+    const valores = formData.getAll(`item_valor_${sid}`);
+
+    const items = itemIds.flatMap((idBruto, i) => {
       const id = String(idBruto).trim();
       const label = String(labels[i] ?? "").trim();
       if (!id || !label) return [];
@@ -74,10 +84,11 @@ function parseSecciones(formData: FormData): SeccionInforme[] {
       ];
     });
 
-    return { id: base.id, titulo: base.titulo, items };
+    return [{ id: sid, titulo: titulos[k]?.trim() || sid, items }];
   });
 
-  // normalizarSecciones deja el orden y los títulos canónicos, igual que al leer.
+  // Sanea y, sobre todo, desambigua ids repetidos dentro de una sección: dos
+  // ítems distintos con el mismo id se confundirían en la analítica.
   return normalizarSecciones(secciones);
 }
 
@@ -96,6 +107,8 @@ async function validarEvaluador(
   }
   return null;
 }
+
+const json = (v: unknown) => v as unknown as Prisma.InputJsonValue;
 
 export async function crearInforme(
   pacienteId: string,
@@ -127,7 +140,7 @@ export async function crearInforme(
       pacienteId,
       evaluadorId: d.evaluadorId ?? null,
       fecha: new Date(d.fecha),
-      secciones: parseSecciones(formData),
+      secciones: json(parseSecciones(formData)),
       recomendaciones: d.recomendaciones ?? null,
     },
     select: { id: true },
@@ -166,7 +179,7 @@ export async function actualizarInforme(
     data: {
       evaluadorId: d.evaluadorId ?? null,
       fecha: new Date(d.fecha),
-      secciones: parseSecciones(formData),
+      secciones: json(parseSecciones(formData)),
       recomendaciones: d.recomendaciones ?? null,
     },
   });

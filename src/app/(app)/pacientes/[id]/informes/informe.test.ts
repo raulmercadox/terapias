@@ -1,32 +1,74 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { normalizarPlantilla } from "@/lib/fichas/plantilla";
+import { PSICOLOGICA } from "@/lib/fichas/base/psicologica";
 import {
-  SECCIONES_DEFECTO,
   normalizarSecciones,
   resumenAvance,
-  seccionesIniciales,
+  seccionesDePlantilla,
   seccionesSinValores,
+  totalItemsDePlantilla,
 } from "./informe";
 
-test("seccionesIniciales copia la plantilla sin compartir referencias", () => {
-  const a = seccionesIniciales();
-  a[0].items[0].label = "modificado";
-  a[0].items[0].valor = "LE";
+/* ── Semilla desde la plantilla del centro ─────────────── */
 
-  assert.notEqual(SECCIONES_DEFECTO[0].items[0].label, "modificado");
-  assert.equal(SECCIONES_DEFECTO[0].items[0].valor, undefined);
+test("seccionesDePlantilla convierte los checklists en secciones del informe", () => {
+  const s = seccionesDePlantilla(PSICOLOGICA.INFORME);
+
+  assert.deepEqual(
+    s.map((x) => x.id),
+    ["lenguaje", "pedagogica", "autonomia", "social"],
+  );
+  assert.equal(s[0].titulo, "ÁREA DE LENGUAJE");
+  assert.equal(s[0].items[0].id, "len_comprensivo");
+  // Nace sin calificar.
+  assert.ok(s.every((sec) => sec.items.every((i) => i.valor === null)));
+  assert.equal(
+    s.reduce((n, sec) => n + sec.items.length, 0),
+    28,
+    "4 + 10 + 8 + 6 ítems del formato impreso",
+  );
 });
 
-test("normalizarSecciones devuelve la plantilla cuando el valor es inválido", () => {
-  for (const entrada of [null, undefined, {}, "texto", 42, []]) {
-    const s = normalizarSecciones(entrada);
-    assert.equal(s.length, SECCIONES_DEFECTO.length);
-    assert.equal(s[0].id, SECCIONES_DEFECTO[0].id);
-    assert.equal(s[0].items.length, SECCIONES_DEFECTO[0].items.length);
+test("una sección de la plantilla sin checklists no entra al informe", () => {
+  const p = normalizarPlantilla({
+    escalas: [{ id: "EIEPLE", valores: ["EI", "EP", "LE"], labels: {} }],
+    secciones: [
+      {
+        id: "solo_texto",
+        titulo: "Notas",
+        grupos: [{ id: "g", campos: [{ tipo: "parrafo", id: "n", label: "Nota" }] }],
+      },
+      {
+        id: "con_items",
+        titulo: "Área",
+        escalaId: "EIEPLE",
+        grupos: [
+          { id: "g", campos: [{ tipo: "checklist", id: "c", items: [{ id: "i1", label: "Uno" }] }] },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(seccionesDePlantilla(p).map((s) => s.id), ["con_items"]);
+});
+
+test("totalItemsDePlantilla cuenta los ítems calificables", () => {
+  assert.equal(totalItemsDePlantilla(PSICOLOGICA.INFORME), 28);
+});
+
+/* ── Saneado del Json guardado ─────────────────────────── */
+
+test("normalizarSecciones devuelve vacío cuando el valor no es una lista", () => {
+  for (const entrada of [null, undefined, {}, "texto", 42]) {
+    assert.deepEqual(normalizarSecciones(entrada), []);
   }
 });
 
-test("normalizarSecciones conserva los textos editados del informe", () => {
+test("el informe es la fuente de verdad de su estructura", () => {
+  // Antes se reponían las secciones faltantes desde un catálogo fijo. Ahora no:
+  // cada centro tiene su plantilla, y rellenar un informe antiguo con la
+  // plantilla vigente cambiaría lo que el profesional firmó.
   const s = normalizarSecciones([
     {
       id: "lenguaje",
@@ -35,34 +77,23 @@ test("normalizarSecciones conserva los textos editados del informe", () => {
     },
   ]);
 
-  const lenguaje = s.find((x) => x.id === "lenguaje");
-  assert.ok(lenguaje);
-  assert.equal(lenguaje.items.length, 1);
-  assert.equal(lenguaje.items[0].label, "Texto editado");
-  assert.equal(lenguaje.items[0].valor, "EP");
+  assert.equal(s.length, 1, "no se agregan secciones que el informe no tenía");
+  assert.equal(s[0].items.length, 1);
+  assert.equal(s[0].items[0].label, "Texto editado");
+  assert.equal(s[0].items[0].valor, "EP");
 });
 
-test("normalizarSecciones completa las secciones ausentes con la plantilla", () => {
-  const s = normalizarSecciones([
-    { id: "lenguaje", titulo: "X", items: [{ id: "a", label: "A" }] },
-  ]);
-
-  assert.deepEqual(
-    s.map((x) => x.id),
-    SECCIONES_DEFECTO.map((x) => x.id),
-  );
-  const social = s.find((x) => x.id === "social");
-  assert.equal(social?.items.length, SECCIONES_DEFECTO[3].items.length);
+test("se respeta el título guardado en el informe", () => {
+  const s = normalizarSecciones([{ id: "social", titulo: "ÁREA SOCIAL", items: [] }]);
+  assert.equal(s[0].titulo, "ÁREA SOCIAL");
 });
 
-test("normalizarSecciones ignora el título guardado: las secciones no son editables", () => {
-  const s = normalizarSecciones([
-    { id: "social", titulo: "RENOMBRADA A MANO", items: [] },
-  ]);
-  assert.equal(s.find((x) => x.id === "social")?.titulo, "SOCIAL");
+test("una sección sin título usable cae en su id", () => {
+  const s = normalizarSecciones([{ id: "social", titulo: "   ", items: [] }]);
+  assert.equal(s[0].titulo, "social");
 });
 
-test("normalizarSecciones descarta ítems malformados y valores fuera de dominio", () => {
+test("descarta ítems malformados y valores fuera de dominio", () => {
   const s = normalizarSecciones([
     {
       id: "lenguaje",
@@ -79,25 +110,39 @@ test("normalizarSecciones descarta ítems malformados y valores fuera de dominio
     },
   ]);
 
-  const lenguaje = s.find((x) => x.id === "lenguaje");
-  assert.deepEqual(
-    lenguaje?.items.map((i) => i.id),
-    ["ok", "raro"],
-  );
-  assert.equal(lenguaje?.items[0].valor, "LE");
-  assert.equal(lenguaje?.items[1].valor, null, "valor fuera de dominio → null");
+  assert.deepEqual(s[0].items.map((i) => i.id), ["ok", "raro"]);
+  assert.equal(s[0].items[0].valor, "LE");
+  assert.equal(s[0].items[1].valor, null, "valor fuera de dominio → null");
 });
 
-test("normalizarSecciones conserva secciones que ya no están en la plantilla", () => {
+test("descarta secciones sin id", () => {
+  const s = normalizarSecciones([{ titulo: "Sin id", items: [] }, null, "x"]);
+  assert.deepEqual(s, []);
+});
+
+// Regresión: `nuevo_${useId()}_${contador}` con el contador reiniciado en cada
+// montaje podía repetir el id de un ítem ad-hoc ya guardado. Dos ítems con el
+// mismo id se colapsan en compararInformes (empareja con un Map por id) y uno
+// pierde su historial. El formulario ya no los genera repetidos, y aquí se
+// desambigua lo que hubiera quedado guardado.
+test("dos ítems con el mismo id dentro de una sección se desambiguan", () => {
   const s = normalizarSecciones([
-    { id: "obsoleta", titulo: "Área retirada", items: [{ id: "x", label: "X" }] },
+    {
+      id: "lenguaje",
+      titulo: "L",
+      items: [
+        { id: "nuevo_r3_0", label: "Praxias linguales", valor: "EI" },
+        { id: "nuevo_r3_0", label: "Soplo sostenido", valor: "LE" },
+      ],
+    },
   ]);
 
-  const obsoleta = s.find((x) => x.id === "obsoleta");
-  assert.ok(obsoleta, "no se pierden datos de informes antiguos");
-  assert.equal(obsoleta.titulo, "Área retirada");
-  assert.equal(s.length, SECCIONES_DEFECTO.length + 1);
+  assert.deepEqual(s[0].items.map((i) => i.id), ["nuevo_r3_0", "nuevo_r3_0_dup"]);
+  assert.deepEqual(s[0].items.map((i) => i.label), ["Praxias linguales", "Soplo sostenido"]);
+  assert.equal(s[0].items.length, 2, "ninguno se pierde");
 });
+
+/* ── Resumen y precarga ────────────────────────────────── */
 
 test("resumenAvance cuenta solo los ítems calificados", () => {
   const secciones = [
@@ -116,10 +161,10 @@ test("resumenAvance cuenta solo los ítems calificados", () => {
   assert.deepEqual(resumenAvance(secciones), { calificados: 2, total: 4 });
 });
 
-test("resumenAvance con la plantilla nueva: nada calificado", () => {
-  const { calificados, total } = resumenAvance(seccionesIniciales());
+test("un informe recién sembrado no tiene nada calificado", () => {
+  const { calificados, total } = resumenAvance(seccionesDePlantilla(PSICOLOGICA.INFORME));
   assert.equal(calificados, 0);
-  assert.equal(total, 28, "4 + 10 + 8 + 6 ítems del formato impreso");
+  assert.equal(total, 28);
 });
 
 test("seccionesSinValores conserva ítems y textos, y borra las calificaciones", () => {
