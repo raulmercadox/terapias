@@ -11,8 +11,17 @@ import {
   Badge,
   Paginacion,
 } from "@/components/ui";
-import { soles, fecha, nombreCompleto } from "@/lib/utils";
+import { cn, soles, fecha, nombreCompleto, hoyLima } from "@/lib/utils";
 import { estadoPaqueteColor, estadoPaqueteLabel } from "./ui";
+import { claveFecha } from "./horario";
+import {
+  DIAS_AVISO,
+  VENCIMIENTO_COLOR,
+  estadoVencimiento,
+  paquetesRenovados,
+  textoVencimiento,
+  type EstadoVencimiento,
+} from "./vencimiento";
 
 const POR_PAGINA = 20;
 
@@ -67,34 +76,83 @@ export default async function SesionesPage({
     ? 1
     : Math.min(Math.max(1, paginaPedida), totalPaginas);
 
-  const paquetes = await prisma.paquete.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    skip: (pagina - 1) * POR_PAGINA,
-    take: POR_PAGINA,
+  const selectPaciente = {
+    select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true },
+  };
+  // Sesiones "usadas" = citas SESION con asistencia != PENDIENTE.
+  const countUsadas = {
     select: {
-      id: true,
-      totalSesiones: true,
-      frecuenciaSemana: true,
-      precio: true,
-      fechaInicio: true,
-      fechaFin: true,
-      estado: true,
-      paciente: {
-        select: {
-          nombres: true,
-          apellidoPaterno: true,
-          apellidoMaterno: true,
-        },
-      },
-      // Sesiones "usadas" = citas SESION con asistencia != PENDIENTE.
-      _count: {
-        select: {
-          citas: { where: { tipo: "SESION", asistencia: { not: "PENDIENTE" } } },
-        },
-      },
+      citas: { where: { tipo: "SESION" as const, asistencia: { not: "PENDIENTE" as const } } },
     },
-  });
+  };
+
+  const [paquetes, activos] = await Promise.all([
+    prisma.paquete.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (pagina - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+      select: {
+        id: true,
+        totalSesiones: true,
+        frecuenciaSemana: true,
+        precio: true,
+        fechaInicio: true,
+        fechaFin: true,
+        estado: true,
+        paciente: selectPaciente,
+        _count: countUsadas,
+      },
+    }),
+    // Todos los activos (sin paginar) para el bloque "Por renovar".
+    prisma.paquete.findMany({
+      where: { ...where, estado: "ACTIVO" },
+      select: {
+        id: true,
+        pacienteId: true,
+        createdAt: true,
+        totalSesiones: true,
+        fechaFin: true,
+        paciente: selectPaciente,
+        _count: countUsadas,
+      },
+    }),
+  ]);
+
+  // Fin real = última sesión no cancelada: reprogramar no actualiza fechaFin.
+  const ids = [...new Set([...activos, ...paquetes].map((p) => p.id))];
+  const ultimas =
+    ids.length > 0
+      ? await prisma.cita.groupBy({
+          by: ["paqueteId"],
+          where: { paqueteId: { in: ids }, tipo: "SESION", estado: { not: "CANCELADA" } },
+          _max: { fecha: true },
+        })
+      : [];
+  const ultimaSesion = new Map(ultimas.map((u) => [u.paqueteId, u._max.fecha]));
+  const finReal = (p: { id: string; fechaFin: Date | null }) =>
+    ultimaSesion.get(p.id) ?? p.fechaFin;
+
+  const hoy = hoyLima();
+  const renovados = paquetesRenovados(activos);
+  const vencimientos = new Map<string, EstadoVencimiento>();
+  const porRenovar = activos
+    .filter((p) => !renovados.has(p.id))
+    .map((p) => {
+      const fin = finReal(p);
+      const finISO = fin ? claveFecha(fin) : null;
+      const restantes = Math.max(0, p.totalSesiones - p._count.citas);
+      const estado = estadoVencimiento({ finReal: finISO, restantes, hoy });
+      if (estado) vencimientos.set(p.id, estado);
+      return { ...p, finISO, restantes, estado };
+    })
+    .filter((p) => p.estado !== null)
+    // Primero los que ya terminaron; dentro de cada grupo, el que termina antes.
+    .sort(
+      (a, b) =>
+        Number(b.estado === "terminado") - Number(a.estado === "terminado") ||
+        (a.finISO ?? "").localeCompare(b.finISO ?? ""),
+    );
 
   return (
     <div className="space-y-6">
@@ -137,6 +195,49 @@ export default async function SesionesPage({
         </form>
       )}
 
+      {porRenovar.length > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <h2 className="text-sm font-semibold text-amber-900">
+            Por renovar ({porRenovar.length})
+          </h2>
+          <p className="text-xs text-amber-800">
+            Paquetes activos que ya terminaron o terminan en los próximos {DIAS_AVISO} días.
+          </p>
+          <ul className="mt-3 divide-y divide-amber-100">
+            {porRenovar.map((p) => (
+              <li
+                key={p.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2.5 w-2.5 shrink-0 rounded-full",
+                    p.estado === "terminado" ? "bg-red-500" : "bg-amber-500",
+                  )}
+                />
+                <span className="font-medium text-slate-900">
+                  {nombreCompleto(p.paciente)}
+                </span>
+                <Badge color={VENCIMIENTO_COLOR[p.estado!]}>
+                  {textoVencimiento(p.estado!, p.finISO, hoy)}
+                </Badge>
+                <span className="text-slate-600">
+                  {p.restantes}{" "}
+                  {p.restantes === 1 ? "sesión restante" : "sesiones restantes"}
+                </span>
+                <Link
+                  href={`/sesiones/${p.id}`}
+                  className="ml-auto font-medium text-sky-600 hover:text-sky-700"
+                >
+                  Ver
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {paquetes.length === 0 ? (
         <EmptyState
           message={
@@ -156,7 +257,7 @@ export default async function SesionesPage({
               <Th>Restantes</Th>
               {veMontos && <Th>Precio</Th>}
               <Th>Inicio</Th>
-              <Th>Fin</Th>
+              <Th>Vence</Th>
               <Th>Estado</Th>
               <Th />
             </tr>
@@ -165,6 +266,8 @@ export default async function SesionesPage({
             {paquetes.map((p) => {
               const usadas = p._count.citas;
               const restantes = Math.max(0, p.totalSesiones - usadas);
+              const fin = finReal(p);
+              const venc = vencimientos.get(p.id);
               return (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <Td className="font-medium text-slate-900">
@@ -179,7 +282,15 @@ export default async function SesionesPage({
                   <Td>{restantes}</Td>
                   {veMontos && <Td>{soles(p.precio)}</Td>}
                   <Td>{fecha(p.fechaInicio)}</Td>
-                  <Td>{fecha(p.fechaFin)}</Td>
+                  <Td>
+                    {venc ? (
+                      <Badge color={VENCIMIENTO_COLOR[venc]}>
+                        {textoVencimiento(venc, fin ? claveFecha(fin) : null, hoy)}
+                      </Badge>
+                    ) : (
+                      fecha(fin)
+                    )}
+                  </Td>
                   <Td>
                     <Badge color={estadoPaqueteColor[p.estado]}>
                       {estadoPaqueteLabel[p.estado]}
