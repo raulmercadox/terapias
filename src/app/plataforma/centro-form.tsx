@@ -3,6 +3,7 @@
 import { useFormReintento } from "@/components/form-reintento";
 import { actualizarCentro, crearCentro, type FormState } from "./actions";
 import { Button, ButtonLink, Field, Input } from "@/components/ui";
+import { BASES, type BaseId } from "@/lib/fichas/base";
 
 type CentroInicial = {
   id: string;
@@ -71,6 +72,32 @@ export function CentroForm({ centro }: { centro?: CentroInicial }) {
         <>
           <Field label="Primera sede" required>
             <Input name="sedeNombre" defaultValue="Principal" required />
+          </Field>
+
+          <Field label="Tipo de terapia">
+            <div className="space-y-2">
+              {(Object.entries(BASES) as [BaseId, (typeof BASES)[BaseId]][]).map(
+                ([id, b], i) => (
+                  <label key={id} className="flex items-start gap-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      name="baseFichas"
+                      value={id}
+                      defaultChecked={i === 0}
+                      className="mt-1 h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span>
+                      <span className="font-medium">{b.label}</span>
+                      <span className="block text-xs text-slate-500">{b.descripcion}</span>
+                    </span>
+                  </label>
+                ),
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              Define las plantillas de historia clínica, evaluación e informe con las
+              que arranca el centro. Se pueden editar después en Configuración.
+            </p>
           </Field>
           <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
             <legend className="px-1 text-sm font-medium text-slate-700">

@@ -128,6 +128,7 @@ model Centro {
   sedes         Sede[]
   usuarios      User[]
   configuracion Configuracion?
+  plantillas    PlantillaFicha[]
 }
 
 // Cómo se calcula el plazo para pagar un paquete (periodo de gracia).
@@ -147,6 +148,35 @@ model Configuracion {
   updatedAt      DateTime   @updatedAt
 
   centro Centro @relation(fields: [centroId], references: [id], onDelete: Cascade)
+}
+
+// Las tres fichas clínicas del sistema.
+enum TipoFicha {
+  HISTORIA
+  EVALUACION
+  INFORME
+}
+
+// Estructura de una ficha clínica, editable por centro: es lo que permite que
+// el mismo sistema sirva a terapia psicológica y a terapia física. Una fila por
+// centro y tipo; sin fila rige la plantilla base psicológica.
+// La forma del Json está en src/lib/fichas/tipos.ts.
+model PlantillaFicha {
+  id        String    @id @default(cuid())
+  centroId  String
+  tipo      TipoFicha
+  // "psicologica" | "fisica" | "personalizada": de qué base salió.
+  base      String    @default("psicologica")
+  // Sube en cada guardado. La evaluación y el informe copian este número junto
+  // con la estructura, para avisar cuando la ficha quedó atrás de la plantilla.
+  version   Int       @default(1)
+  secciones Json      @default("{}")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  centro Centro @relation(fields: [centroId], references: [id], onDelete: Cascade)
+
+  @@unique([centroId, tipo])
 }
 
 model Sede {

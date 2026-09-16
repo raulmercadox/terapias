@@ -13,6 +13,7 @@ import {
   USUARIO_MSG,
   USUARIO_RE,
 } from "@/lib/formatos";
+import { BASE_POR_DEFECTO, esBaseValida, filasDePlantillas } from "@/lib/fichas/base";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -67,6 +68,10 @@ export async function crearCentro(
   const { codigo, nombre, subtitulo } = centro.data;
   const { sedeNombre, adminNombre, adminUsuario, adminPassword } = extra.data;
 
+  // Rubro del centro: decide con qué plantillas de fichas clínicas arranca.
+  const baseFichas = String(formData.get("baseFichas") ?? "");
+  const base = esBaseValida(baseFichas) ? baseFichas : BASE_POR_DEFECTO;
+
   const existente = await prisma.centro.findUnique({ where: { codigo } });
   if (existente) return { error: "Ya existe un centro con ese código." };
 
@@ -77,6 +82,7 @@ export async function crearCentro(
       nombre,
       subtitulo: subtitulo || null,
       sedes: { create: { nombre: sedeNombre } },
+      plantillas: { create: filasDePlantillas(base) },
       usuarios: {
         create: {
           nombre: adminNombre,
