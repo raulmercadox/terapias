@@ -22,9 +22,13 @@ export const authConfig = {
       const isOnLogin = nextUrl.pathname.startsWith("/login");
 
       if (isOnLogin) {
-        if (isLoggedIn) return Response.redirect(new URL("/", nextUrl));
+        if (isLoggedIn) return Response.redirect(new URL("/panel", nextUrl));
         return true;
       }
+      // La portada es pública: la ve cualquiera, con o sin sesión. Si hay
+      // sesión, la propia página ofrece "Ir al panel".
+      if (nextUrl.pathname === "/") return true;
+
       if (!isLoggedIn) return false;
 
       // El superadmin solo usa /plataforma; los usuarios de centro, nunca.
@@ -34,7 +38,7 @@ export const authConfig = {
         return Response.redirect(new URL("/plataforma", nextUrl));
       }
       if (!esSuperadmin && enPlataforma) {
-        return Response.redirect(new URL("/", nextUrl));
+        return Response.redirect(new URL("/panel", nextUrl));
       }
       return true;
     },
