@@ -25,7 +25,7 @@ export async function authenticate(
       empresa,
       usuario: String(formData.get("usuario") ?? "").trim().toLowerCase(),
       password: String(formData.get("password") ?? ""),
-      redirectTo: "/",
+      redirectTo: "/panel",
     });
   } catch (error) {
     if (error instanceof AuthError) {

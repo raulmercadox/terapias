@@ -8,8 +8,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
 import { soles } from "@/lib/utils";
-import { contarPendientes } from "./seguimiento/consultas";
-import { cobranzaDeSede } from "./pagos/consultas-cobranza";
+import { contarPendientes } from "../seguimiento/consultas";
+import { cobranzaDeSede } from "../pagos/consultas-cobranza";
 
 export default async function DashboardPage() {
   const user = await requireUser();

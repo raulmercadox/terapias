@@ -9,13 +9,13 @@ type NavItem = { href: string; label: string; icon: string };
 
 // El rol USUARIO solo ve Inicio, Citas/Agenda y Sesiones.
 const NAV_USUARIO: NavItem[] = [
-  { href: "/", label: "Inicio", icon: "🏠" },
+  { href: "/panel", label: "Inicio", icon: "🏠" },
   { href: "/citas", label: "Citas / Agenda", icon: "📅" },
   { href: "/sesiones", label: "Sesiones", icon: "📋" },
 ];
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Inicio", icon: "🏠" },
+  { href: "/panel", label: "Inicio", icon: "🏠" },
   { href: "/pacientes", label: "Pacientes", icon: "🧒" },
   { href: "/seguimiento", label: "Seguimiento", icon: "📞" },
   { href: "/citas", label: "Citas / Agenda", icon: "📅" },
@@ -39,10 +39,9 @@ export function Sidebar({ rol }: { rol: Rol }) {
   return (
     <nav className="flex flex-col gap-1 p-3">
       {items.map((item) => {
-        const active =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(item.href);
+        // Ya no hace falta el caso especial de "/": existía solo porque
+        // startsWith("/") es cierto para cualquier ruta. El inicio es /panel.
+        const active = pathname.startsWith(item.href);
         return (
           <Link
             key={item.href}

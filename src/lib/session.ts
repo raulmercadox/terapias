@@ -42,7 +42,7 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireSuperadmin(): Promise<UsuarioSesion> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.rol !== "SUPERADMIN") redirect("/");
+  if (user.rol !== "SUPERADMIN") redirect("/panel");
   return user;
 }
 
