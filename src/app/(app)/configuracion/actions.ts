@@ -4,9 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import type { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { USUARIO_MSG, USUARIO_RE } from "@/lib/formatos";
+import { obtenerPlantilla } from "@/lib/plantillas";
+import { aplicarEdicion, parseEdicion } from "@/lib/fichas/editor";
+import { idsDuplicados } from "@/lib/fichas/plantilla";
+import { esBaseValida, plantillaBase } from "@/lib/fichas/base";
+import { TIPOS_FICHA, type TipoFicha } from "@/lib/fichas/tipos";
 
 /* ── Tipo de estado para useActionState ────────────────── */
 
@@ -526,6 +532,93 @@ export async function guardarHorarioLaboral(
 
   revalidatePath("/configuracion/horario");
   redirect(`/configuracion/horario?sede=${sedeId}&ok=1`);
+}
+
+/* ════════════════════════════════════════════════════════
+ * FICHAS CLÍNICAS (plantilla por centro y tipo de ficha)
+ * ════════════════════════════════════════════════════════ */
+
+/** El tipo de ficha llega del formulario: se valida contra el enum. */
+function tipoDeFicha(formData: FormData): TipoFicha | null {
+  const t = String(formData.get("tipo") ?? "");
+  return (TIPOS_FICHA as readonly string[]).includes(t) ? (t as TipoFicha) : null;
+}
+
+export async function guardarPlantilla(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const tipo = tipoDeFicha(formData);
+  if (!tipo) return { error: "Tipo de ficha inválido." };
+
+  const actual = await obtenerPlantilla(centroId, tipo);
+  const editada = aplicarEdicion(actual.plantilla, parseEdicion(formData));
+
+  const repetidos = idsDuplicados(editada);
+  if (repetidos.length > 0) {
+    return { error: `Hay identificadores repetidos: ${repetidos.join(", ")}.` };
+  }
+  if (editada.secciones.length === 0) {
+    return { error: "La plantilla quedaría sin secciones." };
+  }
+
+  await prisma.plantillaFicha.upsert({
+    where: { centroId_tipo: { centroId, tipo } },
+    create: {
+      centroId,
+      tipo,
+      base: "personalizada",
+      version: 1,
+      secciones: editada as unknown as Prisma.InputJsonValue,
+    },
+    // La versión sube en cada guardado: es lo que permite avisar en una ficha
+    // congelada (evaluación) que la plantilla del centro avanzó.
+    update: {
+      base: "personalizada",
+      version: { increment: 1 },
+      secciones: editada as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  revalidatePath("/configuracion/fichas");
+  redirect(`/configuracion/fichas/${tipo}?ok=1`);
+}
+
+/** Vuelve a la plantilla prearmada del rubro elegido, descartando lo editado. */
+export async function restaurarPlantillaBase(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const tipo = tipoDeFicha(formData);
+  if (!tipo) return { error: "Tipo de ficha inválido." };
+
+  const base = String(formData.get("base") ?? "");
+  if (!esBaseValida(base)) return { error: "Plantilla base inválida." };
+
+  const plantilla = plantillaBase(base, tipo);
+
+  await prisma.plantillaFicha.upsert({
+    where: { centroId_tipo: { centroId, tipo } },
+    create: {
+      centroId,
+      tipo,
+      base,
+      version: 1,
+      secciones: plantilla as unknown as Prisma.InputJsonValue,
+    },
+    update: {
+      base,
+      version: { increment: 1 },
+      secciones: plantilla as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  revalidatePath("/configuracion/fichas");
+  redirect(`/configuracion/fichas/${tipo}?ok=1`);
 }
 
 /* ════════════════════════════════════════════════════════

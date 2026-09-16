@@ -45,6 +45,13 @@ export default async function ConfiguracionPage() {
       icon: "📅",
     },
     {
+      label: "Fichas clínicas",
+      descripcion:
+        "Secciones e ítems de la historia clínica, la evaluación y el informe de avance.",
+      href: "/configuracion/fichas",
+      icon: "📝",
+    },
+    {
       label: "Cobranza",
       descripcion: "Periodo de gracia para el pago de paquetes y aviso previo.",
       href: "/configuracion/cobranza",
