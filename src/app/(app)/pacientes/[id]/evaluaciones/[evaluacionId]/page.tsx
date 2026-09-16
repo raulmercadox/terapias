@@ -152,12 +152,16 @@ export default async function EvaluacionDetallePage({
           }
         />
 
-        {estructura.muestraProgramaRecomendado && (
-          <Card>
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Resultado: programa recomendado
-            </h2>
-            <dl className="grid gap-4 sm:grid-cols-2">
+        {/* Las recomendaciones cierran la ficha en cualquier rubro; el programa
+            recomendado solo si la plantilla lo usa. */}
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            {estructura.muestraProgramaRecomendado
+              ? "Resultado: programa recomendado"
+              : "Recomendaciones"}
+          </h2>
+          <dl className="grid gap-4 sm:grid-cols-2">
+            {estructura.muestraProgramaRecomendado && (
               <Dato
                 label="Programa recomendado"
                 value={
@@ -167,10 +171,17 @@ export default async function EvaluacionDetallePage({
                     : null
                 }
               />
-              <Dato label="Recomendaciones" value={evaluacion.recomendaciones} />
-            </dl>
-          </Card>
-        )}
+            )}
+            <Dato
+              label={
+                estructura.muestraProgramaRecomendado
+                  ? "Recomendaciones"
+                  : "Conclusiones y plan sugerido"
+              }
+              value={evaluacion.recomendaciones}
+            />
+          </dl>
+        </Card>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import { nombreCompleto, edad, hoyLima } from "@/lib/utils";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { FichaForm } from "@/components/ficha/ficha-form";
 import { crearEvaluacion } from "../actions";
-import { ProgramaRecomendado } from "../programa-recomendado";
+import { CierreEvaluacion } from "../programa-recomendado";
 
 export default async function NuevaEvaluacionPage({
   params,
@@ -75,7 +75,11 @@ export default async function NuevaEvaluacionPage({
               </Select>
             </Field>
           }
-          pie={plantilla.muestraProgramaRecomendado ? <ProgramaRecomendado /> : undefined}
+          pie={
+            <CierreEvaluacion
+              muestraPrograma={plantilla.muestraProgramaRecomendado === true}
+            />
+          }
         />
       </div>
     </div>

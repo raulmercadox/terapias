@@ -9,6 +9,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { sembrarFichas } from "./demo-fichas";
 
 process.loadEnvFile?.();
 
@@ -839,6 +840,12 @@ async function main() {
     pagos: await prisma.pago.count({ where: { sedeId } }),
   });
 
+  /* ── Fichas clínicas y centro de terapia física ─────────── */
+  const fichas = await sembrarFichas(prisma);
+
+  console.log("Fichas clínicas sembradas:");
+  console.log(fichas.join("\n"));
+  console.log();
   console.log("Casos de cobranza sembrados:");
   console.log(resumen.join("\n"));
   console.log("\nSede Principal:", JSON.stringify(await cuenta(principal.id)));
@@ -848,6 +855,7 @@ async function main() {
       `  Empresa 'arcoiris' · admin / ${CLAVE_DEMO}          (administrador: ve todo)\n` +
       `  Empresa 'arcoiris' · coordinadora / ${CLAVE_DEMO}   (2 sedes, sin configuración)\n` +
       `  Empresa 'arcoiris' · recepcion / ${CLAVE_DEMO}      (solo agenda y sesiones)\n` +
+      `  Empresa 'fisiovida' · admin / ${CLAVE_DEMO}         (TERAPIA FÍSICA: otras fichas)\n` +
       `  Empresa 'demo'     · admin / ${CLAVE_DEMO}          (otro centro: datos aislados)\n` +
       "  Empresa 'plataforma' · superadmin / admin123      (alta de centros)",
   );

@@ -7,7 +7,7 @@ import { normalizarPlantilla } from "@/lib/fichas/plantilla";
 import { normalizarValores } from "@/lib/fichas/valores";
 import { FichaForm } from "@/components/ficha/ficha-form";
 import { actualizarEvaluacion } from "../../actions";
-import { ProgramaRecomendado } from "../../programa-recomendado";
+import { CierreEvaluacion } from "../../programa-recomendado";
 
 export default async function EditarEvaluacionPage({
   params,
@@ -75,12 +75,11 @@ export default async function EditarEvaluacionPage({
             </Field>
           }
           pie={
-            estructura.muestraProgramaRecomendado ? (
-              <ProgramaRecomendado
-                programaRecomendado={evaluacion.programaRecomendado}
-                recomendaciones={evaluacion.recomendaciones}
-              />
-            ) : undefined
+            <CierreEvaluacion
+              muestraPrograma={estructura.muestraProgramaRecomendado === true}
+              programaRecomendado={evaluacion.programaRecomendado}
+              recomendaciones={evaluacion.recomendaciones}
+            />
           }
         />
       </div>
