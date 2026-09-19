@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { CentroLogo } from "@/components/centro-logo";
 import {
   requireUser,
   canAccessSede,
@@ -119,6 +120,7 @@ export default async function InformeAvancePage({
       {/* print-area: al imprimir se oculta todo lo demás (ver globals.css). */}
       <div className="print-area mx-auto max-w-3xl rounded-xl border border-slate-300 bg-white p-8 text-slate-900 shadow-sm">
         <div className="mb-5 border-b border-slate-300 pb-3 text-center">
+          <CentroLogo logoActualizadoEn={centro.logoActualizadoEn} className="mx-auto mb-2 block h-14 w-auto max-w-48" />
           <p className="text-base font-bold">{centro.nombre}</p>
           {centro.subtitulo && (
             <p className="text-xs text-slate-600">{centro.subtitulo}</p>

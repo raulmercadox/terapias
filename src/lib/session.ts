@@ -50,7 +50,16 @@ export async function requireSuperadmin(): Promise<UsuarioSesion> {
 export const getCentro = cache(async (centroId: string) =>
   prisma.centro.findUniqueOrThrow({
     where: { id: centroId },
-    select: { id: true, codigo: true, nombre: true, subtitulo: true, activo: true },
+    // Sin logoBase64 a propósito: la imagen se sirve aparte (/api/centro/logo) y
+    // logoActualizadoEn basta para saber si hay logo y versionar su URL.
+    select: {
+      id: true,
+      codigo: true,
+      nombre: true,
+      subtitulo: true,
+      activo: true,
+      logoActualizadoEn: true,
+    },
   }),
 );
 

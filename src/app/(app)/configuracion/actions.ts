@@ -13,6 +13,7 @@ import { aplicarEdicion, parseEdicion } from "@/lib/fichas/editor";
 import { idsDuplicados } from "@/lib/fichas/plantilla";
 import { esBaseValida, plantillaBase } from "@/lib/fichas/base";
 import { TIPOS_FICHA, type TipoFicha } from "@/lib/fichas/tipos";
+import { LOGO_MAX_BYTES, LOGO_TIPOS } from "@/lib/logo";
 
 /* ── Tipo de estado para useActionState ────────────────── */
 
@@ -666,6 +667,48 @@ export async function guardarConfiguracionCobranza(
   revalidatePath("/configuracion/cobranza");
   revalidatePath("/pagos/cobranza");
   redirect("/configuracion/cobranza?ok=1");
+}
+
+/* ════════════════════════════════════════════════════════
+ * LOGO DEL CENTRO (menú y documentos impresos)
+ * ════════════════════════════════════════════════════════ */
+
+export async function subirLogoCentro(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const archivo = formData.get("logo");
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { error: "Elige una imagen." };
+  }
+  if (!(LOGO_TIPOS as readonly string[]).includes(archivo.type)) {
+    return { error: "Formato no admitido. Usa PNG, JPG o WebP." };
+  }
+  if (archivo.size > LOGO_MAX_BYTES) {
+    return { error: "El logo no puede superar 450 KB." };
+  }
+
+  const base64 = Buffer.from(await archivo.arrayBuffer()).toString("base64");
+  await prisma.centro.update({
+    where: { id: centroId },
+    data: { logoBase64: `data:${archivo.type};base64,${base64}`, logoActualizadoEn: new Date() },
+  });
+
+  // El logo aparece en el menú (layout) y en los documentos impresos.
+  revalidatePath("/", "layout");
+  redirect("/configuracion/logo?ok=1");
+}
+
+export async function quitarLogoCentro(): Promise<void> {
+  const { centroId } = await requireAdmin();
+  await prisma.centro.update({
+    where: { id: centroId },
+    data: { logoBase64: null, logoActualizadoEn: null },
+  });
+  revalidatePath("/", "layout");
+  redirect("/configuracion/logo");
 }
 
 /* ════════════════════════════════════════════════════════

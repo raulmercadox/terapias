@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { CentroLogo } from "@/components/centro-logo";
 import {
   requireUser,
   canAccessSede,
@@ -101,14 +102,19 @@ export default async function HistoriaClinicaPage({
       <div className="print-area max-w-4xl space-y-6">
         {/* Encabezado del formato impreso: solo se ve en papel. */}
         <div className="hidden print:block">
-          <h1 className="text-xl font-bold text-slate-900">{centro.nombre}</h1>
-          {centro.subtitulo && (
-            <p className="text-sm text-slate-600">{centro.subtitulo}</p>
-          )}
-          <p className="mt-1 text-sm font-medium text-slate-700">
-            Sede: {sede?.nombre}
-            {sede?.direccion ? ` · ${sede.direccion}` : ""}
-          </p>
+          <div className="flex items-start gap-4">
+            <CentroLogo logoActualizadoEn={centro.logoActualizadoEn} className="h-16 w-auto max-w-40" />
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">{centro.nombre}</h1>
+              {centro.subtitulo && (
+                <p className="text-sm text-slate-600">{centro.subtitulo}</p>
+              )}
+              <p className="mt-1 text-sm font-medium text-slate-700">
+                Sede: {sede?.nombre}
+                {sede?.direccion ? ` · ${sede.direccion}` : ""}
+              </p>
+            </div>
+          </div>
           <h2 className="mt-3 text-center text-base font-bold uppercase tracking-wide text-slate-900">
             Historia clínica
           </h2>

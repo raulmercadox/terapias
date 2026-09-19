@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { CentroLogo } from "@/components/centro-logo";
 import { prisma } from "@/lib/prisma";
 import {
   requireUser,
@@ -86,18 +87,28 @@ export default async function ReciboPage({
       <div className="print-area mx-auto max-w-2xl rounded-xl border border-slate-300 bg-white p-8 text-slate-900 shadow-sm">
         {/* Encabezado */}
         <div className="flex items-start justify-between border-b border-slate-300 pb-4">
-          <div>
-            <h1 className="text-xl font-bold">{centro.nombre}</h1>
-            {centro.subtitulo && (
-              <p className="text-sm text-slate-600">{centro.subtitulo}</p>
-            )}
-            <p className="mt-1 text-sm font-medium">Sede: {pago.sede.nombre}</p>
-            {pago.sede.direccion && (
-              <p className="text-xs text-slate-500">{pago.sede.direccion}</p>
-            )}
-            {pago.sede.telefono && (
-              <p className="text-xs text-slate-500">Tel.: {pago.sede.telefono}</p>
-            )}
+          <div className="flex items-start gap-4">
+            <CentroLogo
+              logoActualizadoEn={centro.logoActualizadoEn}
+              className="h-16 w-auto max-w-40"
+            />
+            <div>
+              <h1 className="text-xl font-bold">{centro.nombre}</h1>
+              {centro.subtitulo && (
+                <p className="text-sm text-slate-600">{centro.subtitulo}</p>
+              )}
+              <p className="mt-1 text-sm font-medium">
+                Sede: {pago.sede.nombre}
+              </p>
+              {pago.sede.direccion && (
+                <p className="text-xs text-slate-500">{pago.sede.direccion}</p>
+              )}
+              {pago.sede.telefono && (
+                <p className="text-xs text-slate-500">
+                  Tel.: {pago.sede.telefono}
+                </p>
+              )}
+            </div>
           </div>
           <div className="rounded-lg border border-slate-300 px-4 py-2 text-right">
             <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -169,8 +180,8 @@ export default async function ReciboPage({
         </div>
 
         <p className="mt-8 border-t border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
-          Documento interno sin valor tributario. No constituye comprobante de pago
-          electrónico SUNAT.
+          Documento interno sin valor tributario. No constituye comprobante de
+          pago electrónico SUNAT.
         </p>
       </div>
     </div>

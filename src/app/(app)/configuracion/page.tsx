@@ -52,6 +52,12 @@ export default async function ConfiguracionPage() {
       icon: "📝",
     },
     {
+      label: "Logo del centro",
+      descripcion: "Imagen para el menú y los documentos impresos.",
+      href: "/configuracion/logo",
+      icon: "🖼️",
+    },
+    {
       label: "Cobranza",
       descripcion: "Periodo de gracia para el pago de paquetes y aviso previo.",
       href: "/configuracion/cobranza",

@@ -9,6 +9,7 @@ import {
 } from "@/lib/session";
 import { iniciales } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
+import { CentroLogo } from "@/components/centro-logo";
 import { SedeSwitcher } from "@/components/sede-switcher";
 import { CodartLogo } from "@/components/brand/codart-logo";
 import { cerrarSesion } from "./actions";
@@ -40,9 +41,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       {/* Sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
         <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-sm font-bold text-white">
-            {iniciales(centro.nombre)}
-          </div>
+          {centro.logoActualizadoEn ? (
+            <CentroLogo
+              logoActualizadoEn={centro.logoActualizadoEn}
+              className="h-9 w-auto max-w-20 shrink-0 rounded"
+            />
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-sm font-bold text-white">
+              {iniciales(centro.nombre)}
+            </div>
+          )}
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-900" title={centro.nombre}>
               {centro.nombre}

@@ -122,6 +122,11 @@ model Centro {
   nombre    String
   subtitulo String?
   activo    Boolean  @default(true) // inactivo = nadie del centro puede entrar
+  // Logo del centro (data URL PNG/JPG/WebP, máx. 450 KB): menú y documentos impresos.
+  // Se sirve por /api/centro/logo; logoActualizadoEn versiona esa URL (null = sin logo)
+  // para que getCentro no tenga que cargar la imagen en cada request.
+  logoBase64        String?
+  logoActualizadoEn DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
