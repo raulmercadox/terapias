@@ -151,14 +151,14 @@ export function LoginForm({ empresa }: { empresa?: string }) {
             type="button"
             onClick={() => setVerClave((v) => !v)}
             aria-label={verClave ? "Ocultar clave" : "Mostrar clave"}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 transition hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 transition hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-codart-500/40"
           >
             {verClave ? <IconEyeOff /> : <IconEye />}
           </button>
         </ConIcono>
       </Field>
 
-      <Button type="submit" className="w-full py-2.5" disabled={pending}>
+      <Button type="submit" variant="marca" className="w-full py-2.5" disabled={pending}>
         {pending && (
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />

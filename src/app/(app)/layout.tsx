@@ -10,6 +10,7 @@ import {
 import { iniciales } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { SedeSwitcher } from "@/components/sede-switcher";
+import { CodartLogo } from "@/components/brand/codart-logo";
 import { cerrarSesion } from "./actions";
 
 const ROL_LABEL: Record<string, string> = {
@@ -52,6 +53,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
         <Sidebar rol={user.rol} />
+        <a
+          href="https://codart.pe"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-auto flex items-center gap-1.5 border-t border-slate-200 px-4 py-3 text-[11px] text-slate-400 transition-colors hover:text-slate-600"
+        >
+          con tecnología de
+          <CodartLogo variant="isotipo" className="h-3.5 w-3.5" />
+          <span className="font-semibold tracking-wide">Codart</span>
+        </a>
       </aside>
 
       {/* Main */}

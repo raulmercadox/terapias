@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
+import { CodartLogo } from "@/components/brand/codart-logo";
 // Fotos de Unsplash (licencia libre, sin atribución obligatoria).
 import fotoPortada from "./_fotos/portada.webp";
 import fotoSesion from "./_fotos/sesion.webp";
@@ -79,11 +80,11 @@ export default async function PortadaPage() {
       {/* ── Cabecera ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-slate-100 bg-white/80 backdrop-blur">
         <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <a href="#inicio" className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-600 font-bold text-white">
-              T
+          <a href="#inicio" className="flex items-center gap-3">
+            <CodartLogo className="h-7 w-auto" />
+            <span className="hidden border-l border-slate-200 pl-3 text-sm font-medium text-slate-500 sm:inline">
+              Terapias
             </span>
-            <span className="text-lg font-bold tracking-tight">Codart Terapias</span>
           </a>
           <div className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
             <a href="#funcionalidades" className="hover:text-slate-900">
@@ -100,7 +101,7 @@ export default async function PortadaPage() {
             {usuario ? (
               <Link
                 href="/panel"
-                className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+                className="rounded-lg bg-codart-600 px-4 py-2 text-sm font-medium text-white hover:bg-codart-700"
               >
                 Ir al panel
               </Link>
@@ -114,7 +115,7 @@ export default async function PortadaPage() {
                 </Link>
                 <a
                   href="#contacto"
-                  className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+                  className="rounded-lg bg-codart-600 px-4 py-2 text-sm font-medium text-white hover:bg-codart-700"
                 >
                   Solicitar demo
                 </a>
@@ -126,10 +127,10 @@ export default async function PortadaPage() {
 
       {/* ── Portada ───────────────────────────────────────────────────────── */}
       <section id="inicio" className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-sky-50 to-white" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-codart-50 to-white" />
         <div className="mx-auto grid max-w-6xl gap-12 px-6 pt-20 pb-16 lg:grid-cols-2 lg:items-center">
           <div className="text-center lg:text-left">
-            <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-700">
+            <span className="inline-flex items-center gap-2 rounded-full border border-codart-200 bg-white px-3 py-1 text-xs font-medium text-codart-700">
               Para terapia física y psicológica
             </span>
             <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
@@ -143,7 +144,7 @@ export default async function PortadaPage() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row lg:justify-start">
               <a
                 href="#contacto"
-                className="w-full rounded-lg bg-sky-600 px-6 py-3 text-center font-semibold text-white shadow-sm hover:bg-sky-700 sm:w-auto"
+                className="w-full rounded-lg bg-codart-600 px-6 py-3 text-center font-semibold text-white shadow-sm hover:bg-codart-700 sm:w-auto"
               >
                 Solicitar una demo
               </a>
@@ -182,9 +183,9 @@ export default async function PortadaPage() {
           {FUNCIONALIDADES.map((f) => (
             <div
               key={f.titulo}
-              className="rounded-2xl border border-slate-100 p-6 transition hover:border-sky-200 hover:shadow-sm"
+              className="rounded-2xl border border-slate-100 p-6 transition hover:border-codart-200 hover:shadow-sm"
             >
-              <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-sky-50 text-2xl">
+              <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-codart-50 text-2xl">
                 <span aria-hidden="true">{f.icono}</span>
               </div>
               <h3 className="mt-4 font-semibold text-slate-900">{f.titulo}</h3>
@@ -212,7 +213,7 @@ export default async function PortadaPage() {
             />
             <div className="grid gap-8">
               {RAZONES.map((r) => (
-                <div key={r.titulo} className="border-l-4 border-sky-200 pl-5">
+                <div key={r.titulo} className="border-l-4 border-codart-200 pl-5">
                   <h3 className="font-semibold text-slate-900">{r.titulo}</h3>
                   <p className="mt-1 text-sm leading-relaxed text-slate-600">{r.texto}</p>
                 </div>
@@ -224,21 +225,21 @@ export default async function PortadaPage() {
 
       {/* ── Contacto ──────────────────────────────────────────────────────── */}
       <section id="contacto" className="mx-auto max-w-6xl px-6 py-20">
-        <div className="rounded-3xl bg-sky-600 px-8 py-14 text-center text-white">
+        <div className="rounded-3xl bg-codart-600 px-8 py-14 text-center text-white">
           <h2 className="text-3xl font-bold tracking-tight">¿Lo vemos con tu centro?</h2>
-          <p className="mx-auto mt-3 max-w-xl text-sky-50">
+          <p className="mx-auto mt-3 max-w-xl text-codart-50">
             Escríbenos y te mostramos el sistema funcionando, sin compromiso.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
               href={`mailto:${CONTACTO}?subject=Quiero una demo de Codart Terapias`}
-              className="w-full rounded-lg bg-white px-6 py-3 text-center font-semibold text-sky-700 hover:bg-sky-50 sm:w-auto"
+              className="w-full rounded-lg bg-white px-6 py-3 text-center font-semibold text-codart-700 hover:bg-codart-50 sm:w-auto"
             >
               Escribir a {CONTACTO}
             </a>
             <Link
               href="/login"
-              className="w-full rounded-lg border border-sky-300 px-6 py-3 text-center font-semibold text-white hover:bg-sky-700 sm:w-auto"
+              className="w-full rounded-lg border border-codart-300 px-6 py-3 text-center font-semibold text-white hover:bg-codart-700 sm:w-auto"
             >
               Iniciar sesión
             </Link>
@@ -249,11 +250,9 @@ export default async function PortadaPage() {
       {/* ── Pie ───────────────────────────────────────────────────────────── */}
       <footer className="border-t border-slate-100">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-10 text-sm text-slate-500 sm:flex-row">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-sky-600 text-xs font-bold text-white">
-              T
-            </span>
-            <span className="font-semibold text-slate-700">Codart Terapias</span>
+          <div className="flex items-center gap-3">
+            <CodartLogo className="h-6 w-auto" />
+            <span className="border-l border-slate-200 pl-3 font-medium text-slate-500">Terapias</span>
           </div>
           <p>
             <a href="https://codart.pe" className="hover:text-slate-700">

@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { requireSuperadmin } from "@/lib/session";
 import { cerrarSesion } from "@/app/(app)/actions";
+import { CodartLogo } from "@/components/brand/codart-logo";
 
-export const metadata = { title: "Plataforma — Terapias" };
+export const metadata = { title: "Plataforma — Codart Terapias" };
 
 export default async function PlataformaLayout({ children }: { children: ReactNode }) {
   const user = await requireSuperadmin();
@@ -11,11 +12,9 @@ export default async function PlataformaLayout({ children }: { children: ReactNo
   return (
     <div className="flex min-h-screen flex-col bg-slate-100">
       <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-        <Link href="/plataforma/centros" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">
-            T
-          </span>
-          <span>
+        <Link href="/plataforma/centros" className="flex items-center gap-3">
+          <CodartLogo className="h-7 w-auto" />
+          <span className="border-l border-slate-200 pl-3">
             <span className="block text-sm font-semibold text-slate-900">Terapias</span>
             <span className="block text-xs text-slate-400">Plataforma</span>
           </span>

@@ -12,6 +12,22 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Rojo del logo de Codart (600 = #DA2227). Solo en superficies de la plataforma
+   (portada, login, panel de plataforma); el interior del centro sigue en sky. */
+@theme {
+  --color-codart-50: #fef2f2;
+  --color-codart-100: #fee2e2;
+  --color-codart-200: #fecaca;
+  --color-codart-300: #fca5a5;
+  --color-codart-400: #f26b6e;
+  --color-codart-500: #e8383c;
+  --color-codart-600: #da2227;
+  --color-codart-700: #b71c20;
+  --color-codart-800: #97191d;
+  --color-codart-900: #7d1a1d;
+  --color-codart-950: #440a0c;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

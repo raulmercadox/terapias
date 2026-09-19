@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Terapias",
+  title: "Codart Terapias",
   description: "Sistema de gestión para centros de terapia",
 };
 
