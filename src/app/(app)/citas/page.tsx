@@ -24,6 +24,11 @@ import {
   ASISTENCIA_COLOR,
   ASISTENCIA_LABEL,
   TIPO_LABEL,
+  FILTROS_ESTADO,
+  FILTRO_ESTADO_LABEL,
+  parseFiltroEstado,
+  pasaFiltroEstado,
+  type FiltroEstado,
 } from "./helpers";
 import { FiltroTerapeuta } from "./filtro-terapeuta";
 import { VistaConsolidada, type ColumnaDia } from "./vista-consolidada";
@@ -31,11 +36,17 @@ import { VistaConsolidada, type ColumnaDia } from "./vista-consolidada";
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ semana?: string; terapeutaId?: string; vista?: string }>;
+  searchParams: Promise<{
+    semana?: string;
+    terapeutaId?: string;
+    vista?: string;
+    estado?: string;
+  }>;
 }) {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
-  const { semana, terapeutaId, vista } = await searchParams;
+  const { semana, terapeutaId, vista, estado } = await searchParams;
+  const filtroEstado = parseFiltroEstado(estado);
 
   const lunes = lunesDeLaSemana(parseFechaISO(semana) ?? new Date());
   const dias = diasDeLaSemana(lunes);
@@ -106,6 +117,18 @@ export default async function AgendaPage({
     porDia.set(key, arr);
   }
 
+  // La detallada muestra solo las que pasan el filtro de estado.
+  const visibles = citas.filter((c) => pasaFiltroEstado(c.estado, filtroEstado));
+  const visiblesPorDia = new Map<string, typeof citas>();
+  for (const c of visibles) {
+    const key = aISO(c.fecha);
+    visiblesPorDia.set(key, [...(visiblesPorDia.get(key) ?? []), c]);
+  }
+  const canceladasOcultas =
+    filtroEstado === "activas"
+      ? citas.filter((c) => c.estado === "CANCELADA").length
+      : 0;
+
   const hoyISO = aISO(new Date());
   const esFeriado = new Set(feriados.map((f) => aISO(f.fecha)));
   const refrigerio = sede
@@ -134,10 +157,14 @@ export default async function AgendaPage({
     };
   });
 
-  const baseParams = (s: string, v = pideConsolidada) =>
+  const baseParams = (
+    s: string,
+    v = pideConsolidada,
+    e: FiltroEstado = filtroEstado,
+  ) =>
     `?semana=${s}${terapeutaFiltro ? `&terapeutaId=${terapeutaFiltro}` : ""}${
       v ? "&vista=consolidada" : ""
-    }`;
+    }${e !== "activas" ? `&estado=${e}` : ""}`;
 
   const tabBase = "px-3 py-1.5 text-sm font-medium transition-colors";
 
@@ -200,6 +227,9 @@ export default async function AgendaPage({
         <Form action="/citas" replace scroll={false} className="flex items-end gap-2">
           <input type="hidden" name="semana" value={aISO(lunes)} />
           {pideConsolidada && <input type="hidden" name="vista" value="consolidada" />}
+          {filtroEstado !== "activas" && (
+            <input type="hidden" name="estado" value={filtroEstado} />
+          )}
           <Field label="Terapeuta" className="w-60">
             {/* key: al "Limpiar" o cambiar la URL, el select se remonta con el valor nuevo */}
             <FiltroTerapeuta
@@ -226,13 +256,40 @@ export default async function AgendaPage({
         </Form>
       </div>
 
+      {!consolidada && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-slate-500">Estado</span>
+          <div
+            className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white"
+            role="group"
+            aria-label="Estado"
+          >
+            {FILTROS_ESTADO.map((f, i) => (
+              <Link
+                key={f}
+                href={`/citas${baseParams(aISO(lunes), pideConsolidada, f)}`}
+                className={cn(
+                  tabBase,
+                  i > 0 && "border-l border-slate-300",
+                  f === filtroEstado
+                    ? "bg-slate-800 text-white"
+                    : "text-slate-700 hover:bg-slate-50",
+                )}
+              >
+                {FILTRO_ESTADO_LABEL[f]}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {consolidada ? (
         <VistaConsolidada columnas={columnas} />
       ) : (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {dias.map((dia, i) => {
           const key = aISO(dia);
-          const items = porDia.get(key) ?? [];
+          const items = visiblesPorDia.get(key) ?? [];
           const esHoy = key === hoyISO;
           return (
             <Card key={key} className={esHoy ? "ring-2 ring-sky-400" : undefined}>
@@ -288,9 +345,29 @@ export default async function AgendaPage({
       </div>
       )}
 
-      {!consolidada && citas.length === 0 && (
-        <EmptyState message="No hay citas en esta semana para la sede activa." />
+      {!consolidada && canceladasOcultas > 0 && (
+        <p className="text-sm text-slate-500">
+          {canceladasOcultas === 1
+            ? "1 cita cancelada oculta"
+            : `${canceladasOcultas} citas canceladas ocultas`}{" "}
+          ·{" "}
+          <Link
+            href={`/citas${baseParams(aISO(lunes), pideConsolidada, "todas")}`}
+            className="font-medium text-sky-700 hover:underline"
+          >
+            Ver todas
+          </Link>
+        </p>
       )}
+
+      {!consolidada &&
+        (citas.length === 0 ? (
+          <EmptyState message="No hay citas en esta semana para la sede activa." />
+        ) : (
+          visibles.length === 0 && (
+            <EmptyState message="No hay citas con este estado en esta semana." />
+          )
+        ))}
     </div>
   );
 }

@@ -82,6 +82,39 @@ export const TIPO_LABEL: Record<TipoCita, string> = {
   SESION: "Sesión",
 };
 
+/* ── Filtro de estado (vista detallada) ───────────────── */
+
+export const FILTROS_ESTADO = ["activas", "agendadas", "canceladas", "todas"] as const;
+export type FiltroEstado = (typeof FILTROS_ESTADO)[number];
+
+export const FILTRO_ESTADO_LABEL: Record<FiltroEstado, string> = {
+  activas: "Activas",
+  agendadas: "Por atender",
+  canceladas: "Canceladas",
+  todas: "Todas",
+};
+
+/** Lee el filtro de la URL; cualquier valor desconocido vuelve a "activas". */
+export function parseFiltroEstado(value: string | undefined): FiltroEstado {
+  return (FILTROS_ESTADO as readonly string[]).includes(value ?? "")
+    ? (value as FiltroEstado)
+    : "activas";
+}
+
+/** "activas" = agendadas + atendidas: la semana sin las canceladas. */
+export function pasaFiltroEstado(estado: EstadoCita, filtro: FiltroEstado): boolean {
+  switch (filtro) {
+    case "activas":
+      return estado !== "CANCELADA";
+    case "agendadas":
+      return estado === "AGENDADA";
+    case "canceladas":
+      return estado === "CANCELADA";
+    case "todas":
+      return true;
+  }
+}
+
 /* ── Vista consolidada (bloques libres / ocupados) ────── */
 
 export type TipoBloque = "ocupado" | "libre" | "refrigerio";

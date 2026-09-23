@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { consolidarDia, type Jornada } from "./helpers";
+import {
+  consolidarDia,
+  parseFiltroEstado,
+  pasaFiltroEstado,
+  type Jornada,
+} from "./helpers";
 
 const MANANA: Jornada = { apertura: "09:00", cierre: "13:00", refrigerio: null };
 
@@ -79,4 +84,22 @@ test("ignora citas con horas inválidas", () => {
     resumen(consolidarDia([cita("10:00", "09:00"), cita("xx", "10:00")], MANANA)),
     ["libre 09:00-13:00"],
   );
+});
+
+test("filtro de estado: valores desconocidos vuelven a activas", () => {
+  assert.equal(parseFiltroEstado(undefined), "activas");
+  assert.equal(parseFiltroEstado(""), "activas");
+  assert.equal(parseFiltroEstado("CANCELADA"), "activas");
+  assert.equal(parseFiltroEstado("canceladas"), "canceladas");
+  assert.equal(parseFiltroEstado("todas"), "todas");
+});
+
+test("filtro de estado: por defecto se ocultan solo las canceladas", () => {
+  const estados = ["AGENDADA", "ATENDIDA", "CANCELADA"] as const;
+  const pasan = (f: Parameters<typeof pasaFiltroEstado>[1]) =>
+    estados.filter((e) => pasaFiltroEstado(e, f));
+  assert.deepEqual(pasan("activas"), ["AGENDADA", "ATENDIDA"]);
+  assert.deepEqual(pasan("agendadas"), ["AGENDADA"]);
+  assert.deepEqual(pasan("canceladas"), ["CANCELADA"]);
+  assert.deepEqual(pasan("todas"), ["AGENDADA", "ATENDIDA", "CANCELADA"]);
 });
