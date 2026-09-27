@@ -232,7 +232,7 @@ export default async function PortadaPage() {
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
-              href={`mailto:${CONTACTO}?subject=Quiero una demo de Codart Terapias`}
+              href="https://codart.pe/contacto/?producto=terapias"
               className="w-full rounded-lg bg-white px-6 py-3 text-center font-semibold text-codart-700 hover:bg-codart-50 sm:w-auto"
             >
               Escribir a {CONTACTO}
