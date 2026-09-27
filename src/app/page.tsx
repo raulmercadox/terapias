@@ -13,8 +13,6 @@ import fotoSesion from "./_fotos/sesion.webp";
 // envío automático por WhatsApp: los recordatorios abren el chat con el mensaje
 // escrito (click-to-send), no se mandan solos.
 
-const CONTACTO = "contacto@codart.pe";
-
 const FUNCIONALIDADES = [
   {
     icono: "📋",
@@ -235,7 +233,7 @@ export default async function PortadaPage() {
               href="https://codart.pe/contacto/?producto=terapias"
               className="w-full rounded-lg bg-white px-6 py-3 text-center font-semibold text-codart-700 hover:bg-codart-50 sm:w-auto"
             >
-              Escribir a {CONTACTO}
+              Solicitar una demo
             </a>
             <Link
               href="/login"
