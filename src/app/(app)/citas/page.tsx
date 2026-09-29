@@ -11,7 +11,7 @@ import {
   Field,
 } from "@/components/ui";
 import { cn, fecha, nombreCompleto } from "@/lib/utils";
-import { refrigerioDe } from "../sesiones/horario";
+import { refrigerioEfectivo, enVacaciones } from "../sesiones/horario";
 import {
   consolidarDia,
   lunesDeLaSemana,
@@ -64,7 +64,7 @@ export default async function AgendaPage({
   const pideConsolidada = vista === "consolidada";
   const consolidada = pideConsolidada && !!terapeutaFiltro;
 
-  const [terapeutas, citas, sede, feriados] = await Promise.all([
+  const [terapeutas, citas, sede, feriados, terapeutaConsolidada] = await Promise.all([
     prisma.terapeuta.findMany({
       where: { sedeId, activo: true },
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
@@ -106,6 +106,20 @@ export default async function AgendaPage({
           select: { fecha: true },
         })
       : [],
+    // Refrigerio propio y vacaciones del terapeuta filtrado.
+    consolidada
+      ? prisma.terapeuta.findFirst({
+          where: { id: terapeutaFiltro, sedeId },
+          select: {
+            refrigerioInicio: true,
+            refrigerioFin: true,
+            vacaciones: {
+              where: { fechaInicio: { lt: rangoFin }, fechaFin: { gte: rangoInicio } },
+              select: { fechaInicio: true, fechaFin: true },
+            },
+          },
+        })
+      : null,
   ]);
 
   // Agrupa por día (clave "YYYY-MM-DD" local).
@@ -131,14 +145,19 @@ export default async function AgendaPage({
 
   const hoyISO = aISO(new Date());
   const esFeriado = new Set(feriados.map((f) => aISO(f.fecha)));
-  const refrigerio = sede
-    ? refrigerioDe(sede.refrigerioInicio, sede.refrigerioFin)
-    : null;
+  // El refrigerio propio del terapeuta reemplaza al de la sede.
+  const refrigerio = refrigerioEfectivo(sede, terapeutaConsolidada);
+  const vacaciones = (terapeutaConsolidada?.vacaciones ?? []).map((v) => ({
+    inicio: aISO(v.fechaInicio),
+    fin: aISO(v.fechaFin),
+  }));
   const columnas: ColumnaDia[] = dias.map((dia) => {
     const key = aISO(dia);
     const nota = esFeriado.has(key)
       ? "Feriado"
-      : sede && !sede.diasLaborales.includes(dia.getDay())
+      : enVacaciones(vacaciones, key)
+        ? "Vacaciones"
+        : sede && !sede.diasLaborales.includes(dia.getDay())
         ? "No laborable"
         : undefined;
     // Una cita cancelada libera su horario.

@@ -11,7 +11,9 @@ import {
   opcionesPaso,
   claveFecha,
   generarIntervalos,
-  refrigerioDe,
+  refrigerioEfectivo,
+  enVacaciones,
+  type RangoVacaciones,
 } from "../horario";
 
 const initial: ActionState = { ok: false };
@@ -19,6 +21,12 @@ const initial: ActionState = { ok: false };
 const MAX_SEMANAS = 60;
 
 type Opcion = { id: string; nombre: string };
+/** Terapeuta con su refrigerio propio (opcional) y vacaciones futuras. */
+type TerapeutaOpt = Opcion & {
+  refrigerioInicio: string | null;
+  refrigerioFin: string | null;
+  vacaciones: RangoVacaciones[];
+};
 type ProgramaOpt = {
   id: string;
   nombre: string;
@@ -42,6 +50,7 @@ type EstadoCelda =
   | "lleno"
   | "pacienteOcupado"
   | "feriado"
+  | "vacaciones"
   | "pasado";
 
 /** Solapamiento de rangos "HH:mm" (comparación lexicográfica). */
@@ -100,7 +109,7 @@ export default function NuevoPaqueteForm({
 }: {
   sedeId: string;
   pacientes: Opcion[];
-  terapeutas: Opcion[];
+  terapeutas: TerapeutaOpt[];
   programas: ProgramaOpt[];
   horaApertura: string;
   horaCierre: string;
@@ -149,10 +158,14 @@ export default function NuevoPaqueteForm({
   const faltan = Math.max(0, total - marcadas);
   const completo = total > 0 && marcadas === total;
 
+  const terapeuta = terapeutas.find((t) => t.id === terapeutaId);
+  // El refrigerio propio del terapeuta elegido reemplaza al de la sede.
   const refrigerio = useMemo(
-    () => refrigerioDe(refrigerioInicio, refrigerioFin),
-    [refrigerioInicio, refrigerioFin],
+    () => refrigerioEfectivo({ refrigerioInicio, refrigerioFin }, terapeuta),
+    [refrigerioInicio, refrigerioFin, terapeuta],
   );
+  const refrigerioPropio =
+    !!terapeuta?.refrigerioInicio && !!terapeuta?.refrigerioFin;
 
   // El refrigerio parte la grilla: cada tramo arranca su propia rejilla, así
   // que la primera hora tras el descanso es justo cuando este termina.
@@ -225,6 +238,10 @@ export default function NuevoPaqueteForm({
           mapa.set(key, "feriado");
           continue;
         }
+        if (terapeuta && enVacaciones(terapeuta.vacaciones, clave)) {
+          mapa.set(key, "vacaciones");
+          continue;
+        }
 
         // El paciente ya tiene una sesión que se cruza ese día.
         const pacConflicto = citasPac.some(
@@ -262,6 +279,7 @@ export default function NuevoPaqueteForm({
     fechaDeDia,
     feriados,
     hoyClave,
+    terapeuta,
   ]);
 
   function toggleCelda(clave: string, hora: string, seleccionable: boolean) {
@@ -531,6 +549,8 @@ export default function NuevoPaqueteForm({
                                           ? "cursor-not-allowed bg-red-50 text-red-300"
                                           : estado === "feriado"
                                             ? "cursor-not-allowed bg-violet-50 text-violet-400"
+                                            : estado === "vacaciones"
+                                              ? "cursor-not-allowed bg-teal-50 text-teal-500"
                                             : estado === "pacienteOcupado"
                                               ? "cursor-not-allowed bg-slate-100 text-slate-300"
                                               : "cursor-not-allowed bg-slate-50 text-slate-300",
@@ -546,6 +566,8 @@ export default function NuevoPaqueteForm({
                                       ? "Lleno"
                                       : estado === "feriado"
                                         ? "Feriado"
+                                        : estado === "vacaciones"
+                                          ? "Vacac."
                                         : estado === "pacienteOcupado"
                                           ? "Paciente"
                                           : "—"}
@@ -572,6 +594,10 @@ export default function NuevoPaqueteForm({
                 texto="Paciente ocupado"
               />
               <Leyenda clase="bg-violet-50 text-violet-400" texto="Feriado" />
+              <Leyenda
+                clase="bg-teal-50 text-teal-500"
+                texto="Terapeuta de vacaciones"
+              />
               <Leyenda clase="bg-sky-600 text-white" texto="Elegido" />
             </div>
 
@@ -630,7 +656,8 @@ export default function NuevoPaqueteForm({
 
       {refrigerio && (
         <p className="text-xs text-slate-400">
-          Refrigerio de {refrigerio.inicio} a {refrigerio.fin}: el calendario no
+          Refrigerio{refrigerioPropio ? " del terapeuta" : ""} de{" "}
+          {refrigerio.inicio} a {refrigerio.fin}: el calendario no
           ofrece horas que se crucen con él, y tras el descanso vuelve a empezar
           en {refrigerio.fin}.
         </p>

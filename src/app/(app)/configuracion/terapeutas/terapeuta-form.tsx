@@ -14,6 +14,8 @@ type TerapeutaInicial = {
   especialidad: string | null;
   telefono: string | null;
   activo: boolean;
+  refrigerioInicio: string | null;
+  refrigerioFin: string | null;
 };
 
 export function TerapeutaForm({
@@ -61,6 +63,26 @@ export function TerapeutaForm({
       </Field>
       <Field label="Teléfono">
         <Input name="telefono" defaultValue={terapeuta?.telefono ?? ""} />
+      </Field>
+      <Field label="Refrigerio (opcional)">
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            type="time"
+            name="refrigerioInicio"
+            defaultValue={terapeuta?.refrigerioInicio ?? ""}
+            aria-label="Inicio del refrigerio"
+          />
+          <Input
+            type="time"
+            name="refrigerioFin"
+            defaultValue={terapeuta?.refrigerioFin ?? ""}
+            aria-label="Fin del refrigerio"
+          />
+        </div>
+        <p className="mt-1 text-xs text-slate-400">
+          Si lo indicas, reemplaza al refrigerio de la sede para este
+          terapeuta. Deja ambos campos vacíos para usar el de la sede.
+        </p>
       </Field>
       <Field label="Estado">
         <label className="flex items-center gap-2 text-sm text-slate-700">

@@ -22,7 +22,9 @@ import {
   aMinutos,
   sumarMinutos,
   chocaConRefrigerio,
-  refrigerioDe,
+  refrigerioEfectivo,
+  enVacaciones,
+  clavesVacaciones,
   motivoFueraDeHorario,
   motivoFueraDeHorarioEnDia,
   DIA_NOMBRE,
@@ -179,14 +181,24 @@ export async function crearPaquete(
     },
   });
   if (!sede) return { ok: false, error: "Sede no encontrada." };
-  const refrigerio = refrigerioDe(sede.refrigerioInicio, sede.refrigerioFin);
 
   const terapeutaId = data.terapeutaId;
   const ter = await prisma.terapeuta.findFirst({
     where: { id: terapeutaId, sedeId },
-    select: { id: true },
+    select: {
+      id: true,
+      refrigerioInicio: true,
+      refrigerioFin: true,
+      vacaciones: { select: { fechaInicio: true, fechaFin: true } },
+    },
   });
   if (!ter) return { ok: false, error: "Terapeuta no encontrado en la sede." };
+  // El refrigerio propio del terapeuta reemplaza al de la sede.
+  const refrigerio = refrigerioEfectivo(sede, ter);
+  const vacaciones = ter.vacaciones.map((v) => ({
+    inicio: claveFecha(v.fechaInicio),
+    fin: claveFecha(v.fechaFin),
+  }));
 
   // Feriados de la sede (para rechazar sesiones en esos días).
   const feriadosRows = await prisma.feriado.findMany({
@@ -208,6 +220,12 @@ export async function crearPaquete(
     }
     if (feriados.has(s.fecha)) {
       return { ok: false, error: `El ${s.fecha} es feriado; elija otro día.` };
+    }
+    if (enVacaciones(vacaciones, s.fecha)) {
+      return {
+        ok: false,
+        error: `El terapeuta está de vacaciones el ${s.fecha}; elija otro día.`,
+      };
     }
     const fecha = fechaDeClave(s.fecha);
     const dia = fecha.getDay();
@@ -408,8 +426,17 @@ export async function reprogramarSesion(
   const nuevaFecha = parseFecha(fecha);
   if (!nuevaFecha) return { ok: false, error: "Fecha inválida." };
 
+  const ter = terapeutaId && terapeutaId !== "" ? terapeutaId : null;
+  const terapeuta = ter
+    ? await prisma.terapeuta.findFirst({
+        where: { id: ter, sedeId: cita.sedeId },
+        select: { refrigerioInicio: true, refrigerioFin: true },
+      })
+    : null;
+  if (ter && !terapeuta) return { ok: false, error: "Terapeuta inválido." };
+
   // Reprogramar tiene que respetar el horario de la sede igual que agendar:
-  // día laborable, rango de atención y refrigerio.
+  // día laborable, rango de atención y refrigerio (el del terapeuta si tiene).
   const sedeCita = await prisma.sede.findUnique({
     where: { id: cita.sedeId },
     select: {
@@ -426,8 +453,21 @@ export async function reprogramarSesion(
       nuevaFecha,
       horaInicio,
       horaFin,
+      terapeuta,
     );
     if (motivo) return { ok: false, error: motivo };
+  }
+
+  if (ter) {
+    const dia = new Date(nuevaFecha);
+    dia.setHours(0, 0, 0, 0);
+    const vacacion = await prisma.vacacionTerapeuta.findFirst({
+      where: { terapeutaId: ter, fechaInicio: { lte: dia }, fechaFin: { gte: dia } },
+      select: { id: true },
+    });
+    if (vacacion) {
+      return { ok: false, error: "El terapeuta está de vacaciones en esa fecha." };
+    }
   }
 
   // El paciente no puede quedar con dos sesiones solapadas.
@@ -440,14 +480,7 @@ export async function reprogramarSesion(
   });
   if (pc) return { ok: false, error: mensajePaciente(pc) };
 
-  const ter = terapeutaId && terapeutaId !== "" ? terapeutaId : null;
   if (ter) {
-    const existe = await prisma.terapeuta.findFirst({
-      where: { id: ter, sedeId: cita.sedeId },
-      select: { id: true },
-    });
-    if (!existe) return { ok: false, error: "Terapeuta inválido." };
-
     // Cupo del programa (1 = individual; >1 = grupal). Sin paquete/programa: 1.
     const maxPacientes = cita.paquete?.programa?.maxPacientes ?? 1;
     const cupo = await cupoTerapeuta(prisma, {
@@ -673,6 +706,21 @@ export async function renovarPaquete(
   const duracionMin =
     Math.max(0, aMinutos(primera.horaFin) - aMinutos(primera.horaInicio)) || 45;
 
+  // Terapeuta por defecto: el de la última sesión del paquete origen. Su
+  // refrigerio propio (si tiene) reemplaza al de la sede, y sus vacaciones se
+  // saltan al generar, igual que los feriados.
+  const terapeutaId = citasOrigen[citasOrigen.length - 1].terapeutaId ?? null;
+  const terapeuta = terapeutaId
+    ? await prisma.terapeuta.findUnique({
+        where: { id: terapeutaId },
+        select: {
+          refrigerioInicio: true,
+          refrigerioFin: true,
+          vacaciones: { select: { fechaInicio: true, fechaFin: true } },
+        },
+      })
+    : null;
+
   // El horario heredado pudo dejar de ser válido si la sede cambió su
   // configuración después de crear el paquete original. Se valida la plantilla
   // semanal y no cada fecha: la franja se repite, así que saltarla (como se
@@ -695,6 +743,7 @@ export async function renovarPaquete(
         h.dia,
         h.horaInicio,
         sumarMinutos(h.horaInicio, duracionMin),
+        terapeuta,
       );
       if (motivo) {
         return {
@@ -715,9 +764,6 @@ export async function renovarPaquete(
     maxPacientes = prog?.maxPacientes ?? 1;
   }
 
-  // Terapeuta por defecto: el de la última sesión del paquete origen.
-  const terapeutaId = citasOrigen[citasOrigen.length - 1].terapeutaId ?? null;
-
   // La renovación inicia hoy.
   const fechaInicio = new Date();
   fechaInicio.setHours(0, 0, 0, 0);
@@ -728,6 +774,13 @@ export async function renovarPaquete(
     select: { fecha: true },
   });
   const feriados = new Set(feriadosRows.map((f) => claveFecha(f.fecha)));
+  // Los días de vacaciones del terapeuta heredado también se saltan. El tope
+  // cubre de sobra cualquier paquete (una sesión por semana como mínimo).
+  const tope = new Date(fechaInicio);
+  tope.setDate(tope.getDate() + (origen.totalSesiones + 60) * 7);
+  for (const clave of clavesVacaciones(terapeuta?.vacaciones ?? [], fechaInicio, tope)) {
+    feriados.add(clave);
+  }
 
   const generadas = generarSesiones({
     totalSesiones: origen.totalSesiones,

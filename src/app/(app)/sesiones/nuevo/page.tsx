@@ -31,7 +31,17 @@ export default async function NuevoPaquetePage() {
     prisma.terapeuta.findMany({
       where: { sedeId, activo: true },
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
-      select: { id: true, nombres: true, apellidos: true },
+      select: {
+        id: true,
+        nombres: true,
+        apellidos: true,
+        refrigerioInicio: true,
+        refrigerioFin: true,
+        vacaciones: {
+          where: { fechaFin: { gte: hoy } },
+          select: { fechaInicio: true, fechaFin: true },
+        },
+      },
     }),
     prisma.programaTerapia.findMany({
       where: { sedeId, activo: true },
@@ -100,6 +110,12 @@ export default async function NuevoPaquetePage() {
             terapeutas={terapeutas.map((t) => ({
               id: t.id,
               nombre: `${t.apellidos}, ${t.nombres}`,
+              refrigerioInicio: t.refrigerioInicio,
+              refrigerioFin: t.refrigerioFin,
+              vacaciones: t.vacaciones.map((v) => ({
+                inicio: claveFecha(v.fechaInicio),
+                fin: claveFecha(v.fechaFin),
+              })),
             }))}
             programas={programas}
             horaApertura={sede?.horaApertura ?? "09:00"}

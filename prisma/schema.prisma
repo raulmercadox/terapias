@@ -265,13 +265,18 @@ model Terapeuta {
   especialidad String?
   telefono     String?
   activo       Boolean  @default(true)
+  // Refrigerio propio (opcional): si está configurado reemplaza al de la sede
+  // para este terapeuta. Ambos campos van juntos (los dos con valor o null).
+  refrigerioInicio String? // "HH:mm"
+  refrigerioFin    String? // "HH:mm"
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sede           Sede            @relation(fields: [sedeId], references: [id])
+  sede           Sede                @relation(fields: [sedeId], references: [id])
   citas          Cita[]
   evaluaciones   Evaluacion[]
   informesAvance InformeAvance[]
+  vacaciones     VacacionTerapeuta[]
 
   @@index([sedeId])
 }
@@ -522,6 +527,21 @@ model ProgramaTerapia {
 
   @@unique([sedeId, nombre])
   @@index([sedeId])
+}
+
+// Vacaciones de un terapeuta: rango de días (ambos extremos incluidos) en los
+// que no se le puede agendar.
+model VacacionTerapeuta {
+  id          String   @id @default(cuid())
+  terapeutaId String
+  fechaInicio DateTime // anclado a medianoche local
+  fechaFin    DateTime // anclado a medianoche local, inclusive
+  descripcion String?
+  createdAt   DateTime @default(now())
+
+  terapeuta Terapeuta @relation(fields: [terapeutaId], references: [id], onDelete: Cascade)
+
+  @@index([terapeutaId, fechaInicio])
 }
 
 // Feriados por sede: días no disponibles para sesiones (se saltan al generar).

@@ -277,14 +277,32 @@ export async function guardarSede(
  * TERAPEUTAS
  * ════════════════════════════════════════════════════════ */
 
-const terapeutaSchema = z.object({
-  sedeId: z.string().min(1, "La sede es obligatoria."),
-  nombres: z.string().trim().min(1, "Los nombres son obligatorios."),
-  apellidos: z.string().trim().min(1, "Los apellidos son obligatorios."),
-  especialidad: z.string().trim().optional().nullable(),
-  telefono: z.string().trim().optional().nullable(),
-  activo: z.boolean(),
-});
+// Hora opcional de un <input type="time">: vacío llega como "".
+const horaOpcional = z
+  .string()
+  .transform((s) => s.trim())
+  .refine((s) => s === "" || HORA_RE.test(s), "Hora de refrigerio inválida.");
+
+const terapeutaSchema = z
+  .object({
+    sedeId: z.string().min(1, "La sede es obligatoria."),
+    nombres: z.string().trim().min(1, "Los nombres son obligatorios."),
+    apellidos: z.string().trim().min(1, "Los apellidos son obligatorios."),
+    especialidad: z.string().trim().optional().nullable(),
+    telefono: z.string().trim().optional().nullable(),
+    activo: z.boolean(),
+    // Refrigerio propio opcional: vacío = usa el de la sede.
+    refrigerioInicio: horaOpcional,
+    refrigerioFin: horaOpcional,
+  })
+  .refine((d) => (d.refrigerioInicio === "") === (d.refrigerioFin === ""), {
+    message: "Indique el inicio y el fin del refrigerio, o deje ambos vacíos.",
+    path: ["refrigerioFin"],
+  })
+  .refine((d) => d.refrigerioInicio === "" || d.refrigerioFin > d.refrigerioInicio, {
+    message: "El fin del refrigerio debe ser posterior a su inicio.",
+    path: ["refrigerioFin"],
+  });
 
 function parseTerapeutaForm(formData: FormData) {
   return {
@@ -294,6 +312,8 @@ function parseTerapeutaForm(formData: FormData) {
     especialidad: String(formData.get("especialidad") ?? "") || null,
     telefono: String(formData.get("telefono") ?? "") || null,
     activo: formData.get("activo") === "on",
+    refrigerioInicio: String(formData.get("refrigerioInicio") ?? ""),
+    refrigerioFin: String(formData.get("refrigerioFin") ?? ""),
   };
 }
 
@@ -307,12 +327,40 @@ export async function guardarTerapeuta(
   const parsed = terapeutaSchema.safeParse(parseTerapeutaForm(formData));
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { sedeId, nombres, apellidos, especialidad, telefono, activo } =
-    parsed.data;
+  const {
+    sedeId,
+    nombres,
+    apellidos,
+    especialidad,
+    telefono,
+    activo,
+    refrigerioInicio,
+    refrigerioFin,
+  } = parsed.data;
 
   const sede = await sedeDelCentro(centroId, sedeId);
   if (!sede) return { error: "La sede seleccionada no existe." };
 
+  if (
+    refrigerioInicio !== "" &&
+    !(refrigerioInicio < sede.horaCierre && refrigerioFin > sede.horaApertura)
+  ) {
+    return {
+      error: `El refrigerio debe caer dentro del horario de atención de la sede (${sede.horaApertura} a ${sede.horaCierre}).`,
+    };
+  }
+
+  const data = {
+    sedeId,
+    nombres,
+    apellidos,
+    especialidad,
+    telefono,
+    activo,
+    // Vacío = usa el refrigerio de la sede; los dos campos van juntos.
+    refrigerioInicio: refrigerioInicio || null,
+    refrigerioFin: refrigerioFin || null,
+  };
   if (id) {
     const actual = await prisma.terapeuta.findFirst({
       where: { id, sede: { centroId } },
@@ -320,18 +368,98 @@ export async function guardarTerapeuta(
     });
     if (!actual) return { error: "Terapeuta no encontrado." };
 
-    await prisma.terapeuta.update({
-      where: { id },
-      data: { sedeId, nombres, apellidos, especialidad, telefono, activo },
-    });
+    await prisma.terapeuta.update({ where: { id }, data });
   } else {
-    await prisma.terapeuta.create({
-      data: { sedeId, nombres, apellidos, especialidad, telefono, activo },
-    });
+    await prisma.terapeuta.create({ data });
   }
 
   revalidatePath("/configuracion/terapeutas");
   redirect("/configuracion/terapeutas");
+}
+
+/* ── Vacaciones del terapeuta ──────────────────────────── */
+
+const vacacionSchema = z
+  .object({
+    terapeutaId: z.string().min(1, "Terapeuta no encontrado."),
+    fechaInicio: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Indique la fecha de inicio."),
+    fechaFin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indique la fecha de fin."),
+    descripcion: z.string().trim().optional().nullable(),
+  })
+  .refine((d) => d.fechaFin >= d.fechaInicio, {
+    message: "La fecha de fin no puede ser anterior a la de inicio.",
+    path: ["fechaFin"],
+  });
+
+export async function crearVacacion(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const parsed = vacacionSchema.safeParse({
+    terapeutaId: String(formData.get("terapeutaId") ?? ""),
+    fechaInicio: String(formData.get("fechaInicio") ?? ""),
+    fechaFin: String(formData.get("fechaFin") ?? ""),
+    descripcion: String(formData.get("descripcion") ?? "") || null,
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const { terapeutaId, descripcion } = parsed.data;
+  const fechaInicio = fechaMedianoche(parsed.data.fechaInicio);
+  const fechaFin = fechaMedianoche(parsed.data.fechaFin);
+
+  const terapeuta = await prisma.terapeuta.findFirst({
+    where: { id: terapeutaId, sede: { centroId } },
+    select: { id: true },
+  });
+  if (!terapeuta) return { error: "Terapeuta no encontrado." };
+
+  const solapada = await prisma.vacacionTerapeuta.findFirst({
+    where: {
+      terapeutaId,
+      fechaInicio: { lte: fechaFin },
+      fechaFin: { gte: fechaInicio },
+    },
+    select: { id: true },
+  });
+  if (solapada) {
+    return { error: "Ese rango se cruza con otras vacaciones ya registradas." };
+  }
+
+  const vacacion = await prisma.vacacionTerapeuta.create({
+    data: { terapeutaId, fechaInicio, fechaFin, descripcion },
+  });
+
+  // La página muestra las sesiones que ya estaban agendadas en ese rango para
+  // que se reprogramen o reasignen.
+  revalidatePath("/configuracion/terapeutas");
+  redirect(
+    `/configuracion/terapeutas?editar=${terapeutaId}&vacacion=${vacacion.id}`,
+  );
+}
+
+export async function eliminarVacacion(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "Vacaciones no encontradas." };
+
+  const vacacion = await prisma.vacacionTerapeuta.findFirst({
+    where: { id, terapeuta: { sede: { centroId } } },
+    select: { terapeutaId: true },
+  });
+  if (!vacacion) return { error: "Vacaciones no encontradas." };
+
+  await prisma.vacacionTerapeuta.delete({ where: { id } });
+
+  revalidatePath("/configuracion/terapeutas");
+  redirect(`/configuracion/terapeutas?editar=${vacacion.terapeutaId}`);
 }
 
 /* ════════════════════════════════════════════════════════

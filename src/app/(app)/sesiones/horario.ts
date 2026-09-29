@@ -183,11 +183,33 @@ export type HorarioSede = {
   refrigerioFin?: string | null;
 };
 
+/** Refrigerio propio de un terapeuta (null en ambos = usa el de la sede). */
+export type RefrigerioTerapeuta = {
+  refrigerioInicio?: string | null;
+  refrigerioFin?: string | null;
+};
+
+/**
+ * Refrigerio que aplica a un terapeuta: el suyo si lo tiene configurado (y es
+ * utilizable); si no, el de la sede. Es un reemplazo, no una suma: con la sede
+ * en 13:00–14:00 y el terapeuta en 12:00–13:00, a las 13:15 él está libre.
+ */
+export function refrigerioEfectivo(
+  sede: RefrigerioTerapeuta | null | undefined,
+  terapeuta?: RefrigerioTerapeuta | null,
+): Refrigerio | null {
+  const propio = terapeuta
+    ? refrigerioDe(terapeuta.refrigerioInicio, terapeuta.refrigerioFin)
+    : null;
+  return propio ?? refrigerioDe(sede?.refrigerioInicio, sede?.refrigerioFin);
+}
+
 /**
  * ¿Por qué esta franja no cabe en el horario de la sede? Devuelve el mensaje
  * para el usuario, o null si es válida. Reúne las tres reglas que comparten
  * agendar una cita suelta, reprogramar una sesión y renovar un paquete: día
- * laborable, rango de atención y refrigerio.
+ * laborable, rango de atención y refrigerio (el del terapeuta si se indica y
+ * tiene uno propio; si no, el de la sede).
  *
  * Recibe el día suelto (getDay()) y no una fecha porque al renovar se valida la
  * plantilla semanal heredada, que se repite y no tiene una fecha concreta.
@@ -197,6 +219,7 @@ export function motivoFueraDeHorarioEnDia(
   dia: number,
   horaInicio: string,
   horaFin: string,
+  terapeuta?: RefrigerioTerapeuta | null,
 ): string | null {
   if (!sede.diasLaborales.includes(dia)) {
     return `La sede no atiende los ${DIA_NOMBRE[dia]}.`;
@@ -204,9 +227,12 @@ export function motivoFueraDeHorarioEnDia(
   if (horaInicio < sede.horaApertura || horaFin > sede.horaCierre) {
     return `El horario de atención es de ${sede.horaApertura} a ${sede.horaCierre}.`;
   }
-  const refrigerio = refrigerioDe(sede.refrigerioInicio, sede.refrigerioFin);
+  const propio = terapeuta
+    ? refrigerioDe(terapeuta.refrigerioInicio, terapeuta.refrigerioFin)
+    : null;
+  const refrigerio = refrigerioEfectivo(sede, terapeuta);
   if (chocaConRefrigerio(horaInicio, horaFin, refrigerio)) {
-    return `Esa hora se cruza con el refrigerio de ${refrigerio!.inicio} a ${refrigerio!.fin}.`;
+    return `Esa hora se cruza con el refrigerio${propio ? " del terapeuta" : ""} de ${refrigerio!.inicio} a ${refrigerio!.fin}.`;
   }
   return null;
 }
@@ -217,8 +243,47 @@ export function motivoFueraDeHorario(
   fecha: Date,
   horaInicio: string,
   horaFin: string,
+  terapeuta?: RefrigerioTerapeuta | null,
 ): string | null {
-  return motivoFueraDeHorarioEnDia(sede, fecha.getDay(), horaInicio, horaFin);
+  return motivoFueraDeHorarioEnDia(
+    sede,
+    fecha.getDay(),
+    horaInicio,
+    horaFin,
+    terapeuta,
+  );
+}
+
+/** Vacaciones de un terapeuta como claves "YYYY-MM-DD" (ambas inclusive). */
+export type RangoVacaciones = { inicio: string; fin: string };
+
+/** El rango de vacaciones que cubre el día `clave`, o undefined. */
+export function enVacaciones(
+  vacaciones: RangoVacaciones[],
+  clave: string,
+): RangoVacaciones | undefined {
+  return vacaciones.find((v) => v.inicio <= clave && clave <= v.fin);
+}
+
+/**
+ * Días de vacaciones (claves "YYYY-MM-DD") dentro de [desde, hasta]. Sirve para
+ * saltarlos al generar sesiones igual que los feriados.
+ */
+export function clavesVacaciones(
+  vacaciones: { fechaInicio: Date; fechaFin: Date }[],
+  desde: Date,
+  hasta: Date,
+): Set<string> {
+  const out = new Set<string>();
+  for (const v of vacaciones) {
+    const d = new Date(Math.max(v.fechaInicio.getTime(), desde.getTime()));
+    d.setHours(0, 0, 0, 0);
+    const fin = Math.min(v.fechaFin.getTime(), hasta.getTime());
+    for (; d.getTime() <= fin; d.setDate(d.getDate() + 1)) {
+      out.add(claveFecha(d));
+    }
+  }
+  return out;
 }
 
 /** Date → "YYYY-MM-DD" en horario local (clave para comparar feriados). */

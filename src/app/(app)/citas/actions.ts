@@ -21,8 +21,9 @@ function medianoche(d: Date): Date {
 }
 
 /**
- * Valida que la franja de una cita respete el horario laboral de la sede, que
- * la fecha no sea feriado y que el terapeuta no quede doble-reservado.
+ * Valida que la franja de una cita respete el horario laboral de la sede (con
+ * el refrigerio del terapeuta si tiene uno propio), que la fecha no sea
+ * feriado ni vacaciones del terapeuta y que este no quede doble-reservado.
  * Devuelve un mensaje de error, o null si la franja es válida.
  */
 async function validarFranjaCita(params: {
@@ -56,9 +57,34 @@ async function validarFranjaCita(params: {
       refrigerioFin: true,
     },
   });
+  // Refrigerio propio del terapeuta (reemplaza al de la sede) y vacaciones.
+  const terapeuta = terapeutaId
+    ? await prisma.terapeuta.findUnique({
+        where: { id: terapeutaId },
+        select: { refrigerioInicio: true, refrigerioFin: true },
+      })
+    : null;
   if (sede) {
-    const motivo = motivoFueraDeHorario(sede, fecha, horaInicio, horaFin);
+    const motivo = motivoFueraDeHorario(
+      sede,
+      fecha,
+      horaInicio,
+      horaFin,
+      terapeuta,
+    );
     if (motivo) return motivo;
+  }
+  if (terapeutaId) {
+    const dia = medianoche(fecha);
+    const vacacion = await prisma.vacacionTerapeuta.findFirst({
+      where: { terapeutaId, fechaInicio: { lte: dia }, fechaFin: { gte: dia } },
+      select: { descripcion: true },
+    });
+    if (vacacion) {
+      return `El terapeuta está de vacaciones en esa fecha${
+        vacacion.descripcion ? ` (${vacacion.descripcion})` : ""
+      }.`;
+    }
   }
 
   const feriado = await prisma.feriado.findUnique({

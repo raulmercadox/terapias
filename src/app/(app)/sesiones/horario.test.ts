@@ -8,6 +8,9 @@ import {
   refrigerioDe,
   motivoFueraDeHorario,
   motivoFueraDeHorarioEnDia,
+  refrigerioEfectivo,
+  enVacaciones,
+  clavesVacaciones,
   PASO_GRILLA_MIN,
 } from "./horario";
 
@@ -242,4 +245,60 @@ test("un refrigerio fuera del horario no recorta el día", () => {
   const r = refrigerioDe("19:00", "20:00");
   const inicios = generarIntervalos("09:00", "12:00", 60, 60, r).map((i) => i.inicio);
   assert.deepEqual(inicios, ["09:00", "10:00", "11:00"]);
+});
+
+// Refrigerio propio del terapeuta: reemplaza al de la sede (no se suman).
+
+const TERAPEUTA_12 = { refrigerioInicio: "12:00", refrigerioFin: "13:00" };
+
+test("refrigerioEfectivo prefiere el del terapeuta y si no usa el de la sede", () => {
+  assert.deepEqual(refrigerioEfectivo(SEDE, TERAPEUTA_12), {
+    inicio: "12:00",
+    fin: "13:00",
+  });
+  const deSede = { inicio: "13:00", fin: "14:00" };
+  assert.deepEqual(refrigerioEfectivo(SEDE, null), deSede);
+  assert.deepEqual(
+    refrigerioEfectivo(SEDE, { refrigerioInicio: null, refrigerioFin: null }),
+    deSede,
+  );
+  // Un par del terapeuta inutilizable no anula el de la sede.
+  assert.deepEqual(
+    refrigerioEfectivo(SEDE, { refrigerioInicio: "14:00", refrigerioFin: "13:00" }),
+    deSede,
+  );
+  assert.equal(refrigerioEfectivo(null, null), null);
+});
+
+test("motivoFueraDeHorario usa el refrigerio del terapeuta en lugar del de la sede", () => {
+  assert.equal(
+    motivoFueraDeHorario(SEDE, LUNES, "12:15", "13:00", TERAPEUTA_12),
+    "Esa hora se cruza con el refrigerio del terapeuta de 12:00 a 13:00.",
+  );
+  // El refrigerio de la sede ya no aplica a este terapeuta.
+  assert.equal(
+    motivoFueraDeHorario(SEDE, LUNES, "13:15", "14:00", TERAPEUTA_12),
+    null,
+  );
+  assert.equal(
+    motivoFueraDeHorarioEnDia(SEDE, 1, "13:00", "13:45", TERAPEUTA_12),
+    null,
+  );
+});
+
+test("enVacaciones incluye ambos extremos del rango", () => {
+  const v = [{ inicio: "2026-10-05", fin: "2026-10-09" }];
+  assert.equal(enVacaciones(v, "2026-10-04"), undefined);
+  assert.deepEqual(enVacaciones(v, "2026-10-05"), v[0]);
+  assert.deepEqual(enVacaciones(v, "2026-10-09"), v[0]);
+  assert.equal(enVacaciones(v, "2026-10-10"), undefined);
+});
+
+test("clavesVacaciones expande los rangos acotados a la ventana pedida", () => {
+  const dias = clavesVacaciones(
+    [{ fechaInicio: new Date(2026, 9, 5), fechaFin: new Date(2026, 9, 7) }],
+    new Date(2026, 9, 6),
+    new Date(2026, 11, 31),
+  );
+  assert.deepEqual([...dias], ["2026-10-06", "2026-10-07"]);
 });
