@@ -12,9 +12,14 @@ import {
   Td,
   Th,
 } from "@/components/ui";
-import { fecha as fmtFecha, nombreCompleto } from "@/lib/utils";
+import {
+  fecha as fmtFecha,
+  fechaHora as fmtFechaHora,
+  nombreCompleto,
+} from "@/lib/utils";
 import { TerapeutaForm } from "./terapeuta-form";
 import { VacacionForm, EliminarVacacionBtn } from "./vacaciones-form";
+import { BorrarFirmaBtn } from "./borrar-firma-btn";
 
 /** Día siguiente a una fecha de medianoche (tope exclusivo de un rango). */
 function diaSiguiente(d: Date): Date {
@@ -37,8 +42,11 @@ export default async function TerapeutasPage({
     prisma.terapeuta.findMany({
       where: { sede: { centroId: user.centroId } },
       orderBy: [{ activo: "desc" }, { apellidos: "asc" }],
+      // La firma (data URL) solo se carga para el terapeuta en edición.
+      omit: { firma: true },
       include: {
         sede: { select: { nombre: true } },
+        usuario: { select: { usuario: true } },
         especialidades: {
           orderBy: { especialidad: { nombre: "asc" } },
           select: { especialidad: { select: { id: true, nombre: true } } },
@@ -60,6 +68,14 @@ export default async function TerapeutasPage({
   const terapeutaEnEdicion = editarId
     ? terapeutas.find((t) => t.id === editarId)
     : undefined;
+  const firmaEnEdicion = terapeutaEnEdicion?.firmaActualizadaEn
+    ? (
+        await prisma.terapeuta.findUnique({
+          where: { id: terapeutaEnEdicion.id },
+          select: { firma: true },
+        })
+      )?.firma
+    : null;
   const especialidadIdsEnEdicion =
     terapeutaEnEdicion?.especialidades.map((te) => te.especialidad.id) ?? [];
 
@@ -136,6 +152,7 @@ export default async function TerapeutasPage({
                   <Th>Especialidades</Th>
                   <Th>Teléfono</Th>
                   <Th>Refrigerio</Th>
+                  <Th>Usuario</Th>
                   <Th>Estado</Th>
                   <Th />
                 </tr>
@@ -160,6 +177,26 @@ export default async function TerapeutasPage({
                         `${t.refrigerioInicio}–${t.refrigerioFin}`
                       ) : (
                         <span className="text-slate-400">De la sede</span>
+                      )}
+                    </Td>
+                    <Td>
+                      {t.usuario ? (
+                        <>
+                          <span className="block">{t.usuario.usuario}</span>
+                          <span
+                            className={
+                              t.firmaActualizadaEn
+                                ? "text-xs text-green-700"
+                                : "text-xs text-amber-700"
+                            }
+                          >
+                            {t.firmaActualizadaEn
+                              ? "Firma registrada"
+                              : "Firma pendiente"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">Sin usuario</span>
                       )}
                     </Td>
                     <Td>
@@ -210,6 +247,40 @@ export default async function TerapeutasPage({
               }
             />
           </Card>
+
+          {terapeutaEnEdicion && (
+            <Card className="mt-6">
+              <h2 className="mb-1 text-lg font-semibold text-slate-900">
+                Firma
+              </h2>
+              <p className="mb-4 text-xs text-slate-400">
+                La dibuja el propio terapeuta al entrar con su usuario. Se usará
+                al firmar informes y evaluaciones.
+              </p>
+              {firmaEnEdicion ? (
+                <div className="space-y-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- data URL */}
+                  <img
+                    src={firmaEnEdicion}
+                    alt={`Firma de ${terapeutaEnEdicion.nombres} ${terapeutaEnEdicion.apellidos}`}
+                    className="h-24 w-full rounded-lg border border-slate-200 bg-white object-contain p-2"
+                  />
+                  {terapeutaEnEdicion.firmaActualizadaEn && (
+                    <p className="text-xs text-slate-500">
+                      Registrada el {fmtFechaHora(terapeutaEnEdicion.firmaActualizadaEn)}
+                    </p>
+                  )}
+                  <BorrarFirmaBtn id={terapeutaEnEdicion.id} />
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  {terapeutaEnEdicion.usuario
+                    ? "Aún no registra su firma. Se le pedirá al entrar."
+                    : "Sin firma. Crea un usuario con rol Terapeuta para que pueda registrarla."}
+                </p>
+              )}
+            </Card>
+          )}
 
           {terapeutaEnEdicion && (
             <Card className="mt-6">

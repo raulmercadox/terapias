@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  puedeVerPagos,
+  esTerapeuta,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -34,6 +39,8 @@ export default async function PaqueteDetallePage({
 }: PageProps<"/sesiones/[id]">) {
   const { id } = await params;
   const user = await requireUser();
+  // El terapeuta no gestiona paquetes ni agenda citas libremente.
+  if (esTerapeuta(user)) notFound();
   // El rol USUARIO no ve montos (información de pagos).
   const veMontos = puedeVerPagos(user);
 

@@ -5,7 +5,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, assertSedeAccess, assertRolGestion } from "@/lib/session";
+import {
+  requireUser,
+  assertSedeAccess,
+  assertAccesoClinico,
+  esAutorClinico,
+  evaluadorParaGuardar,
+} from "@/lib/session";
 import {
   VALORES_INFORME,
   normalizarSecciones,
@@ -116,7 +122,6 @@ export async function crearInforme(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
@@ -124,12 +129,16 @@ export async function crearInforme(
   });
   if (!paciente) return { error: "El paciente no existe." };
   await assertSedeAccess(user, paciente.sedeId);
+  await assertAccesoClinico(user, pacienteId);
 
   const parsed = parseCampos(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Revisa el formulario." };
   }
-  const d = parsed.data;
+  const d = {
+    ...parsed.data,
+    evaluadorId: evaluadorParaGuardar(user, parsed.data.evaluadorId),
+  };
 
   const errorEvaluador = await validarEvaluador(d.evaluadorId, paciente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };
@@ -156,20 +165,26 @@ export async function actualizarInforme(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
 
   const existente = await prisma.informeAvance.findUnique({
     where: { id: informeId },
-    select: { sedeId: true, pacienteId: true },
+    select: { sedeId: true, pacienteId: true, evaluadorId: true },
   });
   if (!existente) return { error: "El informe no existe." };
   await assertSedeAccess(user, existente.sedeId);
+  await assertAccesoClinico(user, existente.pacienteId);
+  if (!esAutorClinico(user, existente.evaluadorId)) {
+    return { error: "Solo puede editar los informes que usted registró." };
+  }
 
   const parsed = parseCampos(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Revisa el formulario." };
   }
-  const d = parsed.data;
+  const d = {
+    ...parsed.data,
+    evaluadorId: evaluadorParaGuardar(user, parsed.data.evaluadorId),
+  };
 
   const errorEvaluador = await validarEvaluador(d.evaluadorId, existente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };

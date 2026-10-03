@@ -19,6 +19,22 @@ enum Rol {
   ADMINISTRADOR
   COORDINADOR
   USUARIO
+  TERAPEUTA
+}
+
+// Permisos opcionales del rol TERAPEUTA (los de confianza). El catálogo con
+// etiquetas y descripciones vive en src/lib/permisos.ts.
+enum PermisoTerapeuta {
+  CITA_AL_VUELO
+  PACIENTE_AL_VUELO
+  MOVER_CITAS
+  CANCELAR_CITAS
+  ELIMINAR_CITAS
+  REGISTRAR_COBRO
+  EDITAR_HISTORIA_CLINICA
+  EDITAR_DATOS_PACIENTE
+  VER_PACIENTES_SEDE
+  VER_AGENDA_SEDE
 }
 
 enum Sexo {
@@ -259,7 +275,12 @@ model User {
   updatedAt    DateTime   @updatedAt
   centro       Centro?    @relation(fields: [centroId], references: [id])
   // Sedes asignadas (Coordinador: varias; Usuario: una). Admin ve todas las de su centro, sin filas.
+  // Terapeuta: la de su ficha de Terapeuta (se sincroniza al guardar).
   sedes        UserSede[]
+  // Solo rol TERAPEUTA: profesional al que corresponde y permisos opcionales.
+  terapeutaId  String?            @unique
+  permisos     PermisoTerapeuta[] @default([])
+  terapeuta    Terapeuta?         @relation(fields: [terapeutaId], references: [id])
 
   @@unique([centroId, usuario])
 }
@@ -286,6 +307,10 @@ model Terapeuta {
   // para este terapeuta. Ambos campos van juntos (los dos con valor o null).
   refrigerioInicio String? // "HH:mm"
   refrigerioFin    String? // "HH:mm"
+  // Firma dibujada por el propio terapeuta: PNG como data URL. Va en la BD y
+  // no en disco porque el deploy sincroniza con rsync --delete.
+  firma              String?   @db.Text
+  firmaActualizadaEn DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -295,6 +320,7 @@ model Terapeuta {
   informesAvance InformeAvance[]
   vacaciones     VacacionTerapeuta[]
   especialidades TerapeutaEspecialidad[]
+  usuario        User?
 
   @@index([sedeId])
 }

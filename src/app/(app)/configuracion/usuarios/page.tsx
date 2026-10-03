@@ -15,6 +15,7 @@ const rolLabel: Record<string, string> = {
   ADMINISTRADOR: "Administrador",
   COORDINADOR: "Coordinador",
   USUARIO: "Usuario",
+  TERAPEUTA: "Terapeuta",
 };
 
 export default async function UsuariosPage() {

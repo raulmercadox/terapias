@@ -4,7 +4,8 @@ import {
   requireUser,
   canAccessSede,
   getCentro,
-  puedeVerPagos,
+  requireAccesoClinico,
+  esAutorClinico,
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, ButtonLink } from "@/components/ui";
@@ -76,7 +77,7 @@ export default async function InformeAvancePage({
 }) {
   const { id, informeId } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const informe = await prisma.informeAvance.findUnique({
     where: { id: informeId },
@@ -102,12 +103,14 @@ export default async function InformeAvancePage({
             <ButtonLink href={`/pacientes/${id}`} variant="secondary">
               Volver al paciente
             </ButtonLink>
-            <ButtonLink
-              href={`/pacientes/${id}/informes/${informeId}/editar`}
-              variant="secondary"
-            >
-              Editar
-            </ButtonLink>
+            {esAutorClinico(user, informe.evaluadorId) && (
+              <ButtonLink
+                href={`/pacientes/${id}/informes/${informeId}/editar`}
+                variant="secondary"
+              >
+                Editar
+              </ButtonLink>
+            )}
             {user.rol === "ADMINISTRADOR" && (
               <EliminarInformeBoton informeId={informeId} />
             )}

@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useFormReintento } from "@/components/form-reintento";
-import type { Rol } from "@prisma/client";
+import type { PermisoTerapeuta, Rol } from "@prisma/client";
 import { crearUsuario, actualizarUsuario, type FormState } from "../actions";
 import { Button, ButtonLink, Field, Input, Select } from "@/components/ui";
+import { PERMISOS_TERAPEUTA } from "@/lib/permisos";
 
 type SedeOpcion = { id: string; nombre: string };
+type TerapeutaOpcion = { id: string; nombre: string; sede: string };
 
 type UsuarioInicial = {
   id: string;
@@ -16,14 +18,19 @@ type UsuarioInicial = {
   rol: Rol;
   activo: boolean;
   sedeIds: string[];
+  terapeutaId: string | null;
+  permisos: PermisoTerapeuta[];
 };
 
 export function UsuarioForm({
   sedes,
+  terapeutas,
   usuario,
   esPropio = false,
 }: {
   sedes: SedeOpcion[];
+  /** Terapeutas que se pueden vincular: sin usuario, más el ya vinculado. */
+  terapeutas: TerapeutaOpcion[];
   usuario?: UsuarioInicial;
   esPropio?: boolean;
 }) {
@@ -41,6 +48,7 @@ export function UsuarioForm({
 
   const esAdmin = rol === "ADMINISTRADOR";
   const esUsuario = rol === "USUARIO";
+  const esTerapeuta = rol === "TERAPEUTA";
 
   function toggleSede(id: string, checked: boolean) {
     if (esUsuario) {
@@ -105,6 +113,7 @@ export function UsuarioForm({
             <option value="ADMINISTRADOR">Administrador</option>
             <option value="COORDINADOR">Coordinador</option>
             <option value="USUARIO">Usuario</option>
+            <option value="TERAPEUTA">Terapeuta</option>
           </Select>
           {esPropio && (
             <input type="hidden" name="rol" value={rol} />
@@ -112,6 +121,67 @@ export function UsuarioForm({
         </Field>
       </div>
 
+      {esTerapeuta ? (
+        <>
+          <Field label="Terapeuta" required>
+            {terapeutas.length === 0 ? (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                No hay terapeutas activos sin usuario. Regístralo primero en
+                Configuración → Terapeutas.
+              </p>
+            ) : (
+              <Select
+                name="terapeutaId"
+                defaultValue={usuario?.terapeutaId ?? ""}
+                required
+              >
+                <option value="" disabled>
+                  Selecciona el terapeuta
+                </option>
+                {terapeutas.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre} · {t.sede}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <p className="mt-1 text-xs text-slate-400">
+              Accede a la sede del terapeuta. Ve solo su agenda y los pacientes
+              que atiende, y hace sus evaluaciones e informes; no ve pagos.
+            </p>
+          </Field>
+
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-700">
+              Permisos adicionales
+            </span>
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <p className="text-xs text-slate-500">
+                Concédelos solo a terapeutas de confianza.
+              </p>
+              {PERMISOS_TERAPEUTA.map((p) => (
+                <label key={p.valor} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    name="permisos"
+                    value={p.valor}
+                    defaultChecked={usuario?.permisos.includes(p.valor)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                  />
+                  <span>
+                    <span className="block text-sm text-slate-700">
+                      {p.etiqueta}
+                    </span>
+                    <span className="block text-xs text-slate-400">
+                      {p.descripcion}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
       <div>
         <span className="mb-1 block text-sm font-medium text-slate-700">
           Sedes asignadas
@@ -152,6 +222,7 @@ export function UsuarioForm({
           </div>
         )}
       </div>
+      )}
 
       <Field label="Estado">
         <label className="flex items-center gap-2 text-sm text-slate-700">

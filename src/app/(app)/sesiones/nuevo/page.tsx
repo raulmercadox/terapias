@@ -1,4 +1,5 @@
-import { requireUser, requireActiveSede } from "@/lib/session";
+import { notFound } from "next/navigation";
+import { requireUser, requireActiveSede, esTerapeuta } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, ButtonLink, Card, EmptyState } from "@/components/ui";
 import { nombreCompleto } from "@/lib/utils";
@@ -7,6 +8,8 @@ import NuevoPaqueteForm from "./form";
 
 export default async function NuevoPaquetePage() {
   const user = await requireUser();
+  // El terapeuta no gestiona paquetes ni agenda citas libremente.
+  if (esTerapeuta(user)) notFound();
   const sedeId = await requireActiveSede(user);
 
   const hoy = new Date();

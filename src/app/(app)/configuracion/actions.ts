@@ -8,6 +8,7 @@ import type { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { USUARIO_MSG, USUARIO_RE } from "@/lib/formatos";
+import { normalizarPermisos } from "@/lib/permisos";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import {
   aplicarEdicion,
@@ -48,7 +49,7 @@ function sedeDelCentro(centroId: string, sedeId: string) {
  * USUARIOS
  * ════════════════════════════════════════════════════════ */
 
-const rolEnum = z.enum(["ADMINISTRADOR", "COORDINADOR", "USUARIO"]);
+const rolEnum = z.enum(["ADMINISTRADOR", "COORDINADOR", "USUARIO", "TERAPEUTA"]);
 
 const usuarioBaseSchema = z.object({
   nombre: z.string().trim().min(1, "El nombre es obligatorio."),
@@ -57,6 +58,8 @@ const usuarioBaseSchema = z.object({
   rol: rolEnum,
   activo: z.boolean(),
   sedeIds: z.array(z.string()).default([]),
+  terapeutaId: z.string().default(""),
+  permisos: z.array(z.string()).default([]),
 });
 
 /** Valida las reglas de asignación de sedes según el rol. */
@@ -65,6 +68,7 @@ function validarSedesPorRol(
   sedeIds: string[],
 ): string | null {
   if (rol === "ADMINISTRADOR") return null; // admin ve todas, no requiere asignación
+  if (rol === "TERAPEUTA") return null; // su sede es la de su ficha de terapeuta
   if (rol === "COORDINADOR") {
     if (sedeIds.length === 0) {
       return "El coordinador debe tener al menos una sede asignada.";
@@ -96,7 +100,51 @@ function parseUsuarioForm(formData: FormData) {
     rol: String(formData.get("rol") ?? "USUARIO"),
     activo: formData.get("activo") === "on",
     sedeIds: formData.getAll("sedeIds").map((s) => String(s)),
+    terapeutaId: String(formData.get("terapeutaId") ?? ""),
+    permisos: formData.getAll("permisos").map((s) => String(s)),
     password: String(formData.get("password") ?? ""),
+  };
+}
+
+/**
+ * Datos de vínculo según el rol. Un TERAPEUTA debe quedar vinculado a un
+ * terapeuta activo del centro que no tenga ya otro usuario; su sede es la de
+ * esa ficha. Para los demás roles se limpian el vínculo y los permisos.
+ */
+async function vinculoTerapeuta(
+  centroId: string,
+  rol: z.infer<typeof rolEnum>,
+  datos: { terapeutaId: string; permisos: string[]; sedeIds: string[] },
+  userId?: string,
+): Promise<
+  | { error: string }
+  | {
+      terapeutaId: string | null;
+      permisos: ReturnType<typeof normalizarPermisos>;
+      sedeIds: string[];
+    }
+> {
+  if (rol !== "TERAPEUTA") {
+    return { terapeutaId: null, permisos: [], sedeIds: datos.sedeIds };
+  }
+  if (!datos.terapeutaId) {
+    return { error: "Selecciona el terapeuta al que corresponde este usuario." };
+  }
+  const terapeuta = await prisma.terapeuta.findFirst({
+    where: { id: datos.terapeutaId, sede: { centroId } },
+    select: { sedeId: true, activo: true, usuario: { select: { id: true } } },
+  });
+  if (!terapeuta) return { error: "El terapeuta seleccionado no existe." };
+  if (terapeuta.usuario && terapeuta.usuario.id !== userId) {
+    return { error: "Ese terapeuta ya tiene un usuario." };
+  }
+  if (!terapeuta.activo && !terapeuta.usuario) {
+    return { error: "El terapeuta seleccionado está inactivo." };
+  }
+  return {
+    terapeutaId: datos.terapeutaId,
+    permisos: normalizarPermisos(datos.permisos),
+    sedeIds: [terapeuta.sedeId],
   };
 }
 
@@ -112,8 +160,11 @@ export async function crearUsuario(
 
   const { nombre, usuario, rol, activo } = parsed.data;
   const email = parsed.data.email || null;
+
+  const vinculo = await vinculoTerapeuta(centroId, rol, parsed.data);
+  if ("error" in vinculo) return vinculo;
   // Admin no requiere sedes; para los demás se aplican las reglas.
-  const sedeIds = rol === "ADMINISTRADOR" ? [] : parsed.data.sedeIds;
+  const sedeIds = rol === "ADMINISTRADOR" ? [] : vinculo.sedeIds;
 
   const reglaSedes = validarSedesPorRol(rol, sedeIds);
   if (reglaSedes) return { error: reglaSedes };
@@ -139,6 +190,8 @@ export async function crearUsuario(
       passwordHash,
       rol,
       activo,
+      terapeutaId: vinculo.terapeutaId,
+      permisos: vinculo.permisos,
       sedes: {
         create: sedeIds.map((sedeId) => ({ sedeId })),
       },
@@ -164,8 +217,11 @@ export async function actualizarUsuario(
 
   const { nombre, usuario, rol, activo } = parsed.data;
   const email = parsed.data.email || null;
-  const sedeIds = rol === "ADMINISTRADOR" ? [] : parsed.data.sedeIds;
   const { centroId } = actual;
+
+  const vinculo = await vinculoTerapeuta(centroId, rol, parsed.data, id);
+  if ("error" in vinculo) return vinculo;
+  const sedeIds = rol === "ADMINISTRADOR" ? [] : vinculo.sedeIds;
 
   const reglaSedes = validarSedesPorRol(rol, sedeIds);
   if (reglaSedes) return { error: reglaSedes };
@@ -208,6 +264,8 @@ export async function actualizarUsuario(
         email,
         rol,
         activo,
+        terapeutaId: vinculo.terapeutaId,
+        permisos: vinculo.permisos,
         ...(passwordHash ? { passwordHash } : {}),
       },
     });
@@ -385,12 +443,21 @@ export async function guardarTerapeuta(
     });
     if (!actual) return { error: "Terapeuta no encontrado." };
 
-    await prisma.terapeuta.update({
-      where: { id },
-      data: {
-        ...data,
-        especialidades: { deleteMany: {}, create: especialidades },
-      },
+    await prisma.$transaction(async (tx) => {
+      const terapeuta = await tx.terapeuta.update({
+        where: { id },
+        data: {
+          ...data,
+          especialidades: { deleteMany: {}, create: especialidades },
+        },
+        select: { usuario: { select: { id: true } } },
+      });
+      // Si tiene usuario, su sede de acceso sigue a la de la ficha.
+      if (terapeuta.usuario) {
+        const userId = terapeuta.usuario.id;
+        await tx.userSede.deleteMany({ where: { userId } });
+        await tx.userSede.create({ data: { userId, sedeId } });
+      }
     });
   } else {
     await prisma.terapeuta.create({
@@ -400,6 +467,31 @@ export async function guardarTerapeuta(
 
   revalidatePath("/configuracion/terapeutas");
   redirect("/configuracion/terapeutas");
+}
+
+/** Borra la firma de un terapeuta: deberá dibujarla de nuevo al entrar. */
+export async function borrarFirmaTerapeuta(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const id = String(formData.get("id") ?? "");
+  const terapeuta = id
+    ? await prisma.terapeuta.findFirst({
+        where: { id, sede: { centroId } },
+        select: { id: true },
+      })
+    : null;
+  if (!terapeuta) return { error: "Terapeuta no encontrado." };
+
+  await prisma.terapeuta.update({
+    where: { id },
+    data: { firma: null, firmaActualizadaEn: null },
+  });
+
+  revalidatePath("/configuracion/terapeutas");
+  redirect(`/configuracion/terapeutas?editar=${id}`);
 }
 
 /* ── Vacaciones del terapeuta ──────────────────────────── */

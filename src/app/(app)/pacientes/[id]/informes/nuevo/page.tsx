@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+  evaluadorFijoDe,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { nombreCompleto, edad, fecha, hoyLima } from "@/lib/utils";
@@ -19,7 +24,7 @@ export default async function NuevoInformePage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id },
@@ -33,6 +38,9 @@ export default async function NuevoInformePage({
     },
   });
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
+
+  // Para el terapeuta, el evaluador es él mismo y no se puede cambiar.
+  const evaluadorFijo = await evaluadorFijoDe(user);
 
   const terapeutas = await prisma.terapeuta.findMany({
     where: { sedeId: paciente.sedeId, activo: true },
@@ -74,6 +82,7 @@ export default async function NuevoInformePage({
           </p>
         )}
         <InformeForm
+          evaluadorFijo={evaluadorFijo}
           action={accion}
           terapeutas={terapeutas.map((t) => ({
             id: t.id,

@@ -4,7 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, assertSedeAccess, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  assertSedeAccess,
+  puedeVerPagos,
+  esTerapeuta,
+} from "@/lib/session";
+
+/** El terapeuta no opera paquetes: sus sesiones las atiende desde la cita. */
+const SIN_PERMISO_TERAPEUTA = {
+  ok: false,
+  error: "No tiene permisos para esta operación.",
+} as const;
 import {
   construirSesiones,
   generarSesiones,
@@ -120,6 +131,7 @@ export async function crearPaquete(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   const sedeId = formData.get("sedeId") as string;
   await assertSedeAccess(user, sedeId);
 
@@ -355,6 +367,7 @@ export async function registrarAsistencia(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   const parsed = registrarAsistenciaSchema.safeParse(
     Object.fromEntries(formData.entries()),
   );
@@ -403,6 +416,7 @@ export async function reprogramarSesion(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   const parsed = reprogramarSchema.safeParse(
     Object.fromEntries(formData.entries()),
   );
@@ -525,6 +539,7 @@ export async function actualizarPaquete(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   // Editar el precio es una operación sobre montos: no la hace el rol USUARIO.
   if (!puedeVerPagos(user)) {
     return { ok: false, error: "No tiene permisos para esta operación." };
@@ -566,6 +581,7 @@ export async function cambiarEstadoPaquete(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   const parsed = cambiarEstadoSchema.safeParse(
     Object.fromEntries(formData.entries()),
   );
@@ -616,6 +632,7 @@ export async function anularPaquete(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   const paqueteId = formData.get("paqueteId") as string;
   if (!paqueteId) return { ok: false, error: "Paquete inválido." };
 
@@ -651,6 +668,7 @@ export async function renovarPaquete(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
+  if (esTerapeuta(user)) return SIN_PERMISO_TERAPEUTA;
   const paqueteId = formData.get("paqueteId") as string;
   if (!paqueteId) return { ok: false, error: "Paquete inválido." };
 

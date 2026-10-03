@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { Card, PageHeader } from "@/components/ui";
 import { UsuarioForm } from "../usuario-form";
+import { terapeutasVinculables } from "../terapeutas-vinculables";
 
 export default async function EditarUsuarioPage({
   params,
@@ -12,7 +13,7 @@ export default async function EditarUsuarioPage({
 
   const { id } = await params;
 
-  const [usuario, sedes] = await Promise.all([
+  const [usuario, sedes, terapeutas] = await Promise.all([
     prisma.user.findFirst({
       where: { id, centroId: user.centroId },
       include: { sedes: { select: { sedeId: true } } },
@@ -22,6 +23,7 @@ export default async function EditarUsuarioPage({
       orderBy: { nombre: "asc" },
       select: { id: true, nombre: true },
     }),
+    terapeutasVinculables(user.centroId, id),
   ]);
 
   if (!usuario) notFound();
@@ -35,6 +37,7 @@ export default async function EditarUsuarioPage({
       <Card>
         <UsuarioForm
           sedes={sedes}
+          terapeutas={terapeutas}
           usuario={{
             id: usuario.id,
             nombre: usuario.nombre,
@@ -43,6 +46,8 @@ export default async function EditarUsuarioPage({
             rol: usuario.rol,
             activo: usuario.activo,
             sedeIds: usuario.sedes.map((s) => s.sedeId),
+            terapeutaId: usuario.terapeutaId,
+            permisos: usuario.permisos,
           }}
           esPropio={usuario.id === user.id}
         />

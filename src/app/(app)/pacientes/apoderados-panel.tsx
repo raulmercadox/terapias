@@ -186,7 +186,13 @@ function EditarForm({
   );
 }
 
-function ApoderadoCard({ apoderado }: { apoderado: ApoderadoVista }) {
+function ApoderadoCard({
+  apoderado,
+  editable,
+}: {
+  apoderado: ApoderadoVista;
+  editable: boolean;
+}) {
   const [editando, setEditando] = useState(false);
 
   if (editando) {
@@ -216,6 +222,7 @@ function ApoderadoCard({ apoderado }: { apoderado: ApoderadoVista }) {
             <div>Correo: {apoderado.correo ?? "—"}</div>
           </dl>
         </div>
+        {editable && (
         <div className="flex shrink-0 gap-2">
           <Button variant="ghost" onClick={() => setEditando(true)}>
             Editar
@@ -230,6 +237,7 @@ function ApoderadoCard({ apoderado }: { apoderado: ApoderadoVista }) {
             </Button>
           </form>
         </div>
+        )}
       </div>
     </Card>
   );
@@ -238,15 +246,18 @@ function ApoderadoCard({ apoderado }: { apoderado: ApoderadoVista }) {
 export function ApoderadosPanel({
   pacienteId,
   apoderados,
+  editable = true,
 }: {
   pacienteId: string;
   apoderados: ApoderadoVista[];
+  /** false: solo lectura (terapeuta sin permiso de editar datos del paciente). */
+  editable?: boolean;
 }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-900">Apoderados</h2>
-        <AgregarForm pacienteId={pacienteId} />
+        {editable && <AgregarForm pacienteId={pacienteId} />}
       </div>
 
       {apoderados.length === 0 ? (
@@ -254,7 +265,7 @@ export function ApoderadosPanel({
       ) : (
         <div className="space-y-3">
           {apoderados.map((a) => (
-            <ApoderadoCard key={a.id} apoderado={a} />
+            <ApoderadoCard key={a.id} apoderado={a} editable={editable} />
           ))}
         </div>
       )}

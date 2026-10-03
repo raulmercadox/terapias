@@ -1,12 +1,20 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+  evaluadorFijoDe,
+  puede,
+  esAutorClinico,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { PageHeader, Field, Select } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { nombreCompleto, fecha, fechaInput } from "@/lib/utils";
 import { normalizarPlantilla } from "@/lib/fichas/plantilla";
 import { normalizarValores } from "@/lib/fichas/valores";
 import { FichaForm } from "@/components/ficha/ficha-form";
 import { actualizarEvaluacion } from "../../actions";
+import { CampoEvaluador } from "../../campo-evaluador";
 import { CierreEvaluacion } from "../../programa-recomendado";
 
 export default async function EditarEvaluacionPage({
@@ -16,7 +24,7 @@ export default async function EditarEvaluacionPage({
 }) {
   const { id, evaluacionId } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const evaluacion = await prisma.evaluacion.findUnique({
     where: { id: evaluacionId },
@@ -43,6 +51,10 @@ export default async function EditarEvaluacionPage({
   // Se edita con la plantilla CONGELADA en la ficha, no con la vigente del
   // centro: corregir una evaluación no debe reinterpretarla con otra escala.
   const estructura = normalizarPlantilla(evaluacion.estructura);
+  // El terapeuta solo edita lo que él registró.
+  if (!esAutorClinico(user, evaluacion.evaluadorId)) notFound();
+  // Para el terapeuta, el evaluador es él mismo y no se puede cambiar.
+  const evaluadorFijo = await evaluadorFijoDe(user);
   const accion = actualizarEvaluacion.bind(null, evaluacion.id);
 
   return (
@@ -63,19 +75,15 @@ export default async function EditarEvaluacionPage({
           cancelarHref={`/pacientes/${evaluacion.paciente.id}/evaluaciones/${evaluacion.id}`}
           textoGuardar="Guardar evaluación"
           extra={
-            <Field label="Evaluador(a)">
-              <Select name="evaluadorId" defaultValue={evaluacion.evaluadorId ?? ""}>
-                <option value="">— Seleccione —</option>
-                {terapeutas.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {`${t.nombres} ${t.apellidos}`.trim()}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <CampoEvaluador
+              terapeutas={terapeutas}
+              evaluadorId={evaluacion.evaluadorId}
+              evaluadorFijo={evaluadorFijo}
+            />
           }
           pie={
             <CierreEvaluacion
+              puedeAplicarPrograma={puede(user, "EDITAR_DATOS_PACIENTE")}
               muestraPrograma={estructura.muestraProgramaRecomendado === true}
               programaRecomendado={evaluacion.programaRecomendado}
               recomendaciones={evaluacion.recomendaciones}

@@ -13,8 +13,11 @@ export function CierreEvaluacion({
   muestraPrograma,
   programaRecomendado,
   recomendaciones,
+  puedeAplicarPrograma = true,
 }: {
   muestraPrograma: boolean;
+  /** Cambiar el programa del paciente es editar sus datos (permiso del terapeuta). */
+  puedeAplicarPrograma?: boolean;
   programaRecomendado?: string | null;
   recomendaciones?: string | null;
 }) {
@@ -39,10 +42,12 @@ export function CierreEvaluacion({
               <Textarea name="recomendaciones" defaultValue={recomendaciones ?? ""} />
             </Field>
           </div>
-          <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" name="aplicarPrograma" />
-            Actualizar el programa del paciente con el recomendado al guardar
-          </label>
+          {puedeAplicarPrograma && (
+            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="aplicarPrograma" />
+              Actualizar el programa del paciente con el recomendado al guardar
+            </label>
+          )}
         </>
       ) : (
         <Field label="Conclusiones y plan sugerido">

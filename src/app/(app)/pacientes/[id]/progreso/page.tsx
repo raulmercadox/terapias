@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -67,7 +71,7 @@ export default async function ProgresoPacientePage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id },

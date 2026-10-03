@@ -1,5 +1,11 @@
 import { notFound, redirect } from "next/navigation";
-import { requireUser, canAccessSede } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  esCitaPropia,
+  esTerapeuta,
+  puede,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, Card } from "@/components/ui";
 import { nombreCompleto } from "@/lib/utils";
@@ -17,10 +23,16 @@ export default async function EditarCitaPage({
   const cita = await prisma.cita.findUnique({ where: { id } });
   if (!cita) notFound();
   if (!(await canAccessSede(user, cita.sedeId))) redirect("/citas");
+  // El terapeuta (con MOVER_CITAS) solo cambia fecha y hora de sus citas: se
+  // le ofrecen únicamente el paciente y el terapeuta actuales.
+  const terapeuta = esTerapeuta(user);
+  if (!esCitaPropia(user, cita) || !puede(user, "MOVER_CITAS")) notFound();
 
   const [pacientes, terapeutas] = await Promise.all([
     prisma.paciente.findMany({
-      where: { sedeId: cita.sedeId, estado: "ACTIVO" },
+      where: terapeuta
+        ? { id: cita.pacienteId }
+        : { sedeId: cita.sedeId, estado: "ACTIVO" },
       orderBy: [{ apellidoPaterno: "asc" }, { nombres: "asc" }],
       select: {
         id: true,
@@ -30,7 +42,9 @@ export default async function EditarCitaPage({
       },
     }),
     prisma.terapeuta.findMany({
-      where: { sedeId: cita.sedeId, activo: true },
+      where: terapeuta
+        ? { id: cita.terapeutaId ?? "" }
+        : { sedeId: cita.sedeId, activo: true },
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
       select: { id: true, nombres: true, apellidos: true },
     }),
@@ -63,7 +77,14 @@ export default async function EditarCitaPage({
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Editar cita" subtitle="Modifica los datos de la cita." />
+      <PageHeader
+        title={terapeuta ? "Mover cita" : "Editar cita"}
+        subtitle={
+          terapeuta
+            ? "Cambia la fecha y la hora de la cita."
+            : "Modifica los datos de la cita."
+        }
+      />
       <Card className="max-w-2xl">
         <CitaForm
           pacientes={opcionesPacientes}

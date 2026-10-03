@@ -63,6 +63,31 @@ export function hoyLima(ahora: Date = new Date()): string {
   return HOY_LIMA_FMT.format(ahora);
 }
 
+const HORA_LIMA_FMT = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "America/Lima",
+});
+
+/**
+ * Hora actual en Perú como "HH:mm", redondeada hacia abajo a `paso` minutos
+ * (para precargar la hora de inicio de una cita registrada al vuelo).
+ */
+export function horaLima(ahora: Date = new Date(), paso = 5): string {
+  const [h, m] = HORA_LIMA_FMT.format(ahora).split(":").map(Number);
+  const min = Math.floor(m / paso) * paso;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/** Suma minutos a una hora "HH:mm". null si se pasa de las 23:59. */
+export function sumarMinutos(hora: string, minutos: number): string | null {
+  const [h, m] = hora.split(":").map(Number);
+  const total = h * 60 + m + minutos;
+  if (!Number.isFinite(total) || total < 0 || total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
 const DATETIME_FMT = new Intl.DateTimeFormat("es-PE", {
   day: "2-digit",
   month: "2-digit",

@@ -1,6 +1,11 @@
 import Link from "next/link";
 import Form from "next/form";
-import { requireUser, requireActiveSede } from "@/lib/session";
+import {
+  requireUser,
+  requireActiveSede,
+  esTerapeuta,
+  puede,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -57,8 +62,18 @@ export default async function AgendaPage({
   const semanaSiguiente = aISO(sumarDias(lunes, 7));
   const semanaActual = aISO(lunesDeLaSemana(new Date()));
 
-  const terapeutaFiltro =
-    terapeutaId && terapeutaId.length > 0 ? terapeutaId : undefined;
+  // El terapeuta ve solo su agenda. Con VER_AGENDA_SEDE puede consultar la de
+  // los demás (solo lectura), pero de entrada se le muestra la suya.
+  const terapeuta = esTerapeuta(user);
+  const miTerapeutaId = user.terapeuta?.terapeutaId ?? "";
+  const veAgendaSede = terapeuta && puede(user, "VER_AGENDA_SEDE");
+  const terapeutaFiltro = terapeuta
+    ? veAgendaSede && terapeutaId !== undefined
+      ? terapeutaId || undefined
+      : miTerapeutaId
+    : terapeutaId && terapeutaId.length > 0
+      ? terapeutaId
+      : undefined;
   // La consolidada solo tiene sentido para un terapeuta: con todos juntos no se
   // distingue quién está libre. La preferencia se conserva en la URL.
   const pideConsolidada = vista === "consolidada";
@@ -190,9 +205,15 @@ export default async function AgendaPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Agenda"
+        title={terapeuta ? "Mi agenda" : "Agenda"}
         subtitle={`Semana del ${fecha(lunes)} al ${fecha(dias[6])}`}
-        actions={<ButtonLink href="/citas/nueva">Nueva cita</ButtonLink>}
+        actions={
+          !terapeuta ? (
+            <ButtonLink href="/citas/nueva">Nueva cita</ButtonLink>
+          ) : puede(user, "CITA_AL_VUELO") ? (
+            <ButtonLink href="/citas/rapida">Registro rápido</ButtonLink>
+          ) : undefined
+        }
       />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -243,6 +264,7 @@ export default async function AgendaPage({
           </div>
         </div>
 
+        {(!terapeuta || veAgendaSede) && (
         <Form action="/citas" replace scroll={false} className="flex items-end gap-2">
           <input type="hidden" name="semana" value={aISO(lunes)} />
           {pideConsolidada && <input type="hidden" name="vista" value="consolidada" />}
@@ -267,12 +289,13 @@ export default async function AgendaPage({
             href={`/citas?semana=${aISO(lunes)}`}
             variant="ghost"
           >
-            Limpiar
+            {terapeuta ? "Mi agenda" : "Limpiar"}
           </ButtonLink>
           <button type="submit" className="sr-only">
             Filtrar
           </button>
         </Form>
+        )}
       </div>
 
       {!consolidada && (
@@ -327,9 +350,13 @@ export default async function AgendaPage({
                 <ul className="space-y-2">
                   {items.map((c) => (
                     <li key={c.id}>
-                      <Link
-                        href={`/citas/${c.id}`}
-                        className="block rounded-lg border border-slate-200 px-3 py-2 transition-colors hover:bg-slate-50"
+                      {/* Las citas de otros terapeutas (VER_AGENDA_SEDE) son solo de consulta. */}
+                      <EnlaceCita
+                        href={
+                          !terapeuta || c.terapeutaId === miTerapeutaId
+                            ? `/citas/${c.id}`
+                            : null
+                        }
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-medium text-slate-900">
@@ -353,7 +380,7 @@ export default async function AgendaPage({
                             {ASISTENCIA_LABEL[c.asistencia]}
                           </Badge>
                         </div>
-                      </Link>
+                      </EnlaceCita>
                     </li>
                   ))}
                 </ul>
@@ -388,5 +415,21 @@ export default async function AgendaPage({
           )
         ))}
     </div>
+  );
+}
+
+function EnlaceCita({
+  href,
+  children,
+}: {
+  href: string | null;
+  children: React.ReactNode;
+}) {
+  const clase = "block rounded-lg border border-slate-200 px-3 py-2";
+  if (!href) return <div className={cn(clase, "bg-slate-50")}>{children}</div>;
+  return (
+    <Link href={href} className={cn(clase, "transition-colors hover:bg-slate-50")}>
+      {children}
+    </Link>
   );
 }

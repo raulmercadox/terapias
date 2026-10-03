@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { requireUser, requireActiveSede, puedeVerPagos } from "@/lib/session";
+import { notFound } from "next/navigation";
+import {
+  requireUser,
+  requireActiveSede,
+  puedeVerPagos,
+  esTerapeuta,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -31,6 +37,8 @@ export default async function SesionesPage({
   searchParams: Promise<{ q?: string; pacienteId?: string; pagina?: string }>;
 }) {
   const user = await requireUser();
+  // El terapeuta no gestiona paquetes ni agenda citas libremente.
+  if (esTerapeuta(user)) notFound();
   const sedeId = await requireActiveSede(user);
   const { q, pacienteId, pagina: paginaParam } = await searchParams;
   const termino = (q ?? "").trim();

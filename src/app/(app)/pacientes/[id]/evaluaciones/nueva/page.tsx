@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+  evaluadorFijoDe,
+  puede,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { PageHeader, Field, Select } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { nombreCompleto, edad, hoyLima } from "@/lib/utils";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { FichaForm } from "@/components/ficha/ficha-form";
 import { crearEvaluacion } from "../actions";
+import { CampoEvaluador } from "../campo-evaluador";
 import { CierreEvaluacion } from "../programa-recomendado";
 
 export default async function NuevaEvaluacionPage({
@@ -15,7 +22,7 @@ export default async function NuevaEvaluacionPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id },
@@ -40,6 +47,8 @@ export default async function NuevaEvaluacionPage({
     obtenerPlantilla(user.centroId, "EVALUACION"),
   ]);
 
+  // Para el terapeuta, el evaluador es él mismo y no se puede cambiar.
+  const evaluadorFijo = await evaluadorFijoDe(user);
   const accion = crearEvaluacion.bind(null, paciente.id);
 
   return (
@@ -64,19 +73,14 @@ export default async function NuevaEvaluacionPage({
           cancelarHref={`/pacientes/${paciente.id}`}
           textoGuardar="Guardar evaluación"
           extra={
-            <Field label="Evaluador(a)">
-              <Select name="evaluadorId" defaultValue="">
-                <option value="">— Seleccione —</option>
-                {terapeutas.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {`${t.nombres} ${t.apellidos}`.trim()}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <CampoEvaluador
+              terapeutas={terapeutas}
+              evaluadorFijo={evaluadorFijo}
+            />
           }
           pie={
             <CierreEvaluacion
+              puedeAplicarPrograma={puede(user, "EDITAR_DATOS_PACIENTE")}
               muestraPrograma={plantilla.muestraProgramaRecomendado === true}
             />
           }

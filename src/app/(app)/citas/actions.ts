@@ -4,10 +4,20 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser, assertSedeAccess, requireActiveSede } from "@/lib/session";
+import {
+  requireUser,
+  assertSedeAccess,
+  requireActiveSede,
+  esTerapeuta,
+  assertCitaPropia,
+  assertPermiso,
+  terapeutaDe,
+} from "@/lib/session";
 import { cupoTerapeuta, conflictoPaciente } from "@/lib/conflictos";
 import { motivoFueraDeHorario } from "../sesiones/horario";
-import { fecha as fmtFecha } from "@/lib/utils";
+import { fecha as fmtFecha, hoyLima, sumarMinutos } from "@/lib/utils";
+import { TIPO_LABEL } from "./helpers";
+import { crearPagoConRecibo } from "../pagos/crear-pago";
 
 /* ── Validación ───────────────────────────────────────── */
 
@@ -161,6 +171,8 @@ export async function crearCita(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
+  // El terapeuta no agenda citas libremente: usa el registro rápido.
+  if (esTerapeuta(user)) return { error: "No tiene permisos para esta operación." };
   const sedeId = await requireActiveSede(user);
   await assertSedeAccess(user, sedeId);
 
@@ -243,11 +255,19 @@ export async function actualizarCita(
     where: { id },
     select: {
       sedeId: true,
+      pacienteId: true,
+      terapeutaId: true,
+      tipo: true,
       paquete: { select: { programa: { select: { maxPacientes: true } } } },
     },
   });
   if (!cita) return { error: "Cita no encontrada." };
   await assertSedeAccess(user, cita.sedeId);
+  const terapeuta = esTerapeuta(user);
+  if (terapeuta) {
+    assertPermiso(user, "MOVER_CITAS");
+    assertCitaPropia(user, cita);
+  }
 
   const parsed = citaSchema.safeParse({
     pacienteId: formData.get("pacienteId"),
@@ -261,7 +281,16 @@ export async function actualizarCita(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
-  const data = parsed.data;
+  // El terapeuta solo mueve la cita (fecha y hora): paciente, terapeuta y
+  // tipo se quedan como estaban.
+  const data = terapeuta
+    ? {
+        ...parsed.data,
+        pacienteId: cita.pacienteId,
+        terapeutaId: cita.terapeutaId ?? undefined,
+        tipo: cita.tipo,
+      }
+    : parsed.data;
 
   const paciente = await prisma.paciente.findFirst({
     where: { id: data.pacienteId, sedeId: cita.sedeId },
@@ -321,10 +350,11 @@ export async function marcarAsistencia(formData: FormData): Promise<void> {
 
   const cita = await prisma.cita.findUnique({
     where: { id },
-    select: { sedeId: true },
+    select: { sedeId: true, terapeutaId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
   await assertSedeAccess(user, cita.sedeId);
+  assertCitaPropia(user, cita);
 
   await prisma.cita.update({ where: { id }, data: { asistencia } });
 
@@ -343,10 +373,15 @@ export async function cambiarEstado(formData: FormData): Promise<void> {
 
   const cita = await prisma.cita.findUnique({
     where: { id },
-    select: { sedeId: true },
+    select: { sedeId: true, terapeutaId: true, estado: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
   await assertSedeAccess(user, cita.sedeId);
+  assertCitaPropia(user, cita);
+  // Cancelar (o reactivar una cancelada) es un permiso aparte del terapeuta.
+  if (estado === "CANCELADA" || cita.estado === "CANCELADA") {
+    assertPermiso(user, "CANCELAR_CITAS");
+  }
 
   await prisma.cita.update({ where: { id }, data: { estado } });
 
@@ -371,10 +406,11 @@ export async function registrarSeguimiento(
 
   const cita = await prisma.cita.findUnique({
     where: { id },
-    select: { sedeId: true },
+    select: { sedeId: true, terapeutaId: true },
   });
   if (!cita) return { error: "Cita no encontrada." };
   await assertSedeAccess(user, cita.sedeId);
+  assertCitaPropia(user, cita);
 
   const parsed = seguimientoSchema.safeParse({
     terapiaRealizada: formData.get("terapiaRealizada") || undefined,
@@ -416,10 +452,16 @@ export async function eliminarCita(formData: FormData): Promise<void> {
 
   const cita = await prisma.cita.findUnique({
     where: { id },
-    select: { sedeId: true },
+    select: { sedeId: true, terapeutaId: true, paqueteId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
   await assertSedeAccess(user, cita.sedeId);
+  assertCitaPropia(user, cita);
+  if (esTerapeuta(user)) {
+    assertPermiso(user, "ELIMINAR_CITAS");
+    // Las sesiones de un paquete las gestiona recepción (afecta el paquete).
+    if (cita.paqueteId) throw new Error("No puede eliminar sesiones de un paquete.");
+  }
 
   await prisma.cita.delete({ where: { id } });
 
@@ -435,10 +477,11 @@ export async function marcarRecordatorioEnviado(formData: FormData): Promise<voi
 
   const cita = await prisma.cita.findUnique({
     where: { id },
-    select: { sedeId: true },
+    select: { sedeId: true, terapeutaId: true },
   });
   if (!cita) throw new Error("Cita no encontrada.");
   await assertSedeAccess(user, cita.sedeId);
+  assertCitaPropia(user, cita);
 
   await prisma.cita.update({
     where: { id },
@@ -447,4 +490,188 @@ export async function marcarRecordatorioEnviado(formData: FormData): Promise<voi
 
   revalidatePath("/citas");
   revalidatePath(`/citas/${id}`);
+}
+
+/* ── Registro rápido (terapeuta, al vuelo) ────────────── */
+
+const DURACIONES_RAPIDA = [30, 45, 60, 90] as const;
+
+const citaRapidaSchema = z.object({
+  pacienteNuevo: z.boolean(),
+  pacienteId: z.string(),
+  nombres: z.string().trim(),
+  apellidoPaterno: z.string().trim(),
+  telefono: z.string().trim(),
+  tipo: z.enum(["CONSULTA", "EVALUACION", "SESION"]),
+  horaInicio: z.string().regex(horaRegex, "Hora de inicio inválida."),
+  duracion: z.coerce
+    .number()
+    .refine(
+      (n) => (DURACIONES_RAPIDA as readonly number[]).includes(n),
+      "Duración inválida.",
+    ),
+});
+
+/**
+ * Cita para hoy, del propio terapeuta, para pacientes que llegan sin cita.
+ * Con PACIENTE_AL_VUELO puede además dar de alta a un paciente nuevo con
+ * datos mínimos (el resto lo completa recepción después).
+ */
+export async function crearCitaRapida(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await requireUser();
+  assertPermiso(user, "CITA_AL_VUELO");
+  const { terapeutaId, sedeId } = terapeutaDe(user);
+
+  const parsed = citaRapidaSchema.safeParse({
+    pacienteNuevo: formData.get("pacienteNuevo") === "1",
+    pacienteId: String(formData.get("pacienteId") ?? ""),
+    nombres: String(formData.get("nombres") ?? ""),
+    apellidoPaterno: String(formData.get("apellidoPaterno") ?? ""),
+    telefono: String(formData.get("telefono") ?? ""),
+    tipo: formData.get("tipo"),
+    horaInicio: formData.get("horaInicio"),
+    duracion: formData.get("duracion"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+  }
+  const d = parsed.data;
+
+  if (d.pacienteNuevo) {
+    assertPermiso(user, "PACIENTE_AL_VUELO");
+    if (!d.nombres) return { error: "Indique los nombres del paciente." };
+    if (!d.apellidoPaterno) return { error: "Indique el apellido paterno." };
+  } else {
+    if (!d.pacienteId) return { error: "Seleccione un paciente." };
+    const paciente = await prisma.paciente.findFirst({
+      where: { id: d.pacienteId, sedeId },
+      select: { id: true },
+    });
+    if (!paciente) return { error: "El paciente no pertenece a su sede." };
+  }
+
+  const horaFin = sumarMinutos(d.horaInicio, d.duracion);
+  if (!horaFin) return { error: "La cita no puede terminar después de medianoche." };
+
+  const fechaCita = fechaDesdeInput(hoyLima());
+  const err = await validarFranjaCita({
+    sedeId,
+    fecha: fechaCita,
+    horaInicio: d.horaInicio,
+    horaFin,
+    terapeutaId,
+    // Un paciente nuevo aún no tiene citas con qué chocar.
+    pacienteId: d.pacienteNuevo ? "" : d.pacienteId,
+    maxPacientes: 1,
+  });
+  if (err) return { error: err };
+
+  const cita = await prisma.$transaction(async (tx) => {
+    const pacienteId = d.pacienteNuevo
+      ? (
+          await tx.paciente.create({
+            data: {
+              sedeId,
+              nombres: d.nombres,
+              apellidoPaterno: d.apellidoPaterno,
+              telefono: d.telefono || null,
+            },
+            select: { id: true },
+          })
+        ).id
+      : d.pacienteId;
+    return tx.cita.create({
+      data: {
+        sedeId,
+        pacienteId,
+        terapeutaId,
+        fecha: fechaCita,
+        horaInicio: d.horaInicio,
+        horaFin,
+        tipo: d.tipo,
+      },
+      select: { id: true },
+    });
+  });
+
+  revalidatePath("/citas");
+  revalidatePath("/panel");
+  redirect(`/citas/${cita.id}`);
+}
+
+/* ── Cobro rápido de una cita (terapeuta) ─────────────── */
+
+const cobroSchema = z.object({
+  monto: z.coerce
+    .number()
+    .refine((n) => Number.isFinite(n) && n > 0, "El monto debe ser mayor a 0."),
+  metodoPago: z.enum(["EFECTIVO", "YAPE", "PLIN", "TRANSFERENCIA", "TARJETA"]),
+  referencia: z.string().trim(),
+});
+
+export type CobroState = { error?: string } | undefined;
+
+/**
+ * El terapeuta con REGISTRAR_COBRO cobra una cita suya que no es de un
+ * paquete (los paquetes los cobra recepción desde Pagos). Se genera el recibo
+ * con la misma numeración que el módulo de pagos.
+ */
+export async function registrarCobroCita(
+  citaId: string,
+  _prev: CobroState,
+  formData: FormData,
+): Promise<CobroState> {
+  const user = await requireUser();
+  assertPermiso(user, "REGISTRAR_COBRO");
+  if (!esTerapeuta(user)) return { error: "Registre el pago desde el módulo de Pagos." };
+
+  const cita = await prisma.cita.findUnique({
+    where: { id: citaId },
+    select: {
+      sedeId: true,
+      pacienteId: true,
+      terapeutaId: true,
+      paqueteId: true,
+      tipo: true,
+      fecha: true,
+      horaInicio: true,
+    },
+  });
+  if (!cita) return { error: "Cita no encontrada." };
+  await assertSedeAccess(user, cita.sedeId);
+  assertCitaPropia(user, cita);
+  if (cita.paqueteId) {
+    return { error: "Las sesiones de un paquete se cobran desde Pagos." };
+  }
+
+  const parsed = cobroSchema.safeParse({
+    monto: formData.get("monto"),
+    metodoPago: formData.get("metodoPago"),
+    referencia: String(formData.get("referencia") ?? ""),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+  }
+
+  let numeroRecibo: string;
+  try {
+    ({ numeroRecibo } = await crearPagoConRecibo({
+      sedeId: cita.sedeId,
+      pacienteId: cita.pacienteId,
+      concepto: cita.tipo === "EVALUACION" ? "EVALUACION" : "OTRO",
+      descripcion: `${TIPO_LABEL[cita.tipo]} del ${fmtFecha(cita.fecha)} ${cita.horaInicio}`,
+      monto: parsed.data.monto,
+      metodoPago: parsed.data.metodoPago,
+      referencia: parsed.data.referencia || undefined,
+      fechaPago: new Date(),
+    }));
+  } catch {
+    return { error: "No se pudo generar el recibo (intenta de nuevo)." };
+  }
+
+  revalidatePath("/pagos");
+  redirect(`/citas/${citaId}?recibo=${encodeURIComponent(numeroRecibo)}`);
 }

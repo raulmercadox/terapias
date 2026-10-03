@@ -1,6 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import type { Asistencia, EstadoCita } from "@prisma/client";
-import { requireUser, canAccessSede, getCentro } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  getCentro,
+  esCitaPropia,
+  esTerapeuta,
+  puede,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -23,17 +30,21 @@ import { marcarAsistencia, cambiarEstado } from "../actions";
 import { SeguimientoForm } from "../seguimiento-form";
 import { WhatsAppButton } from "../whatsapp-button";
 import { DeleteButton } from "../delete-button";
+import { CobroForm } from "../cobro-form";
 
 const ASISTENCIAS: Asistencia[] = ["PENDIENTE", "ASISTIO", "FALTO", "TARDANZA"];
 const ESTADOS: EstadoCita[] = ["AGENDADA", "ATENDIDA", "CANCELADA"];
 
 export default async function DetalleCitaPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ recibo?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
+  const { recibo } = await searchParams;
 
   const cita = await prisma.cita.findUnique({
     where: { id },
@@ -70,7 +81,23 @@ export default async function DetalleCitaPage({
 
   if (!cita) notFound();
   if (!(await canAccessSede(user, cita.sedeId))) redirect("/citas");
+  if (!esCitaPropia(user, cita)) notFound();
   const centro = await getCentro(user.centroId);
+
+  // Lo que el terapeuta puede hacer depende de sus permisos opcionales.
+  const terapeuta = esTerapeuta(user);
+  const puedeMover = puede(user, "MOVER_CITAS");
+  const puedeEliminar =
+    !terapeuta || (puede(user, "ELIMINAR_CITAS") && !cita.paqueteId);
+  const puedeCancelar = puede(user, "CANCELAR_CITAS");
+  const estadosPermitidos = puedeCancelar
+    ? ESTADOS
+    : ESTADOS.filter((e) => e !== "CANCELADA");
+  const puedeCambiarEstado = puedeCancelar || cita.estado !== "CANCELADA";
+  // Cobro rápido: solo el terapeuta con permiso y en citas sueltas (los
+  // paquetes los cobra recepción desde Pagos).
+  const puedeCobrar =
+    terapeuta && puede(user, "REGISTRAR_COBRO") && !cita.paqueteId;
 
   const pacienteNombre = nombreCompleto(cita.paciente);
 
@@ -93,13 +120,21 @@ export default async function DetalleCitaPage({
         subtitle={`${fecha(cita.fecha)} · ${cita.horaInicio}–${cita.horaFin} · ${TIPO_LABEL[cita.tipo]}`}
         actions={
           <>
-            <ButtonLink href={`/citas/${cita.id}/editar`} variant="secondary">
-              Editar
-            </ButtonLink>
-            <DeleteButton citaId={cita.id} />
+            {puedeMover && (
+              <ButtonLink href={`/citas/${cita.id}/editar`} variant="secondary">
+                {terapeuta ? "Mover" : "Editar"}
+              </ButtonLink>
+            )}
+            {puedeEliminar && <DeleteButton citaId={cita.id} />}
           </>
         }
       />
+
+      {recibo && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          Cobro registrado. Recibo N° {recibo}.
+        </p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Datos */}
@@ -178,11 +213,12 @@ export default async function DetalleCitaPage({
             </Button>
           </form>
 
+          {puedeCambiarEstado && (
           <form action={cambiarEstado} className="flex items-end gap-2">
             <input type="hidden" name="id" value={cita.id} />
             <Field label="Cambiar estado" className="flex-1">
               <Select name="estado" defaultValue={cita.estado}>
-                {ESTADOS.map((e) => (
+                {estadosPermitidos.map((e) => (
                   <option key={e} value={e}>
                     {e}
                   </option>
@@ -193,6 +229,16 @@ export default async function DetalleCitaPage({
               Guardar
             </Button>
           </form>
+          )}
+
+          {puedeCobrar && (
+            <div>
+              <p className="mb-2 block text-sm font-medium text-slate-700">
+                Cobro
+              </p>
+              <CobroForm citaId={cita.id} />
+            </div>
+          )}
 
           <div>
             <p className="mb-1 block text-sm font-medium text-slate-700">

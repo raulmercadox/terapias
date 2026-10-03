@@ -6,9 +6,11 @@ import {
   getCentro,
   getSedesForUser,
   getActiveSedeId,
+  puede,
 } from "@/lib/session";
 import { iniciales } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
+import { AvisoFirma } from "@/components/aviso-firma";
 import { CentroLogo } from "@/components/centro-logo";
 import { SedeSwitcher } from "@/components/sede-switcher";
 import { CodartLogo } from "@/components/brand/codart-logo";
@@ -18,6 +20,7 @@ const ROL_LABEL: Record<string, string> = {
   ADMINISTRADOR: "Administrador",
   COORDINADOR: "Coordinador",
   USUARIO: "Usuario",
+  TERAPEUTA: "Terapeuta",
 };
 
 /** La pestaña muestra el nombre del centro con el que se inició sesión. */
@@ -60,7 +63,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             </p>
           </div>
         </div>
-        <Sidebar rol={user.rol} />
+        <Sidebar
+          rol={user.rol}
+          citaRapida={user.rol === "TERAPEUTA" && puede(user, "CITA_AL_VUELO")}
+        />
         <a
           href="https://codart.pe"
           target="_blank"
@@ -93,7 +99,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 space-y-6 p-4 md:p-6">{children}</main>
+        <main className="flex-1 space-y-6 p-4 md:p-6">
+          {user.terapeuta && !user.terapeuta.tieneFirma && <AvisoFirma />}
+          {children}
+        </main>
       </div>
     </div>
   );

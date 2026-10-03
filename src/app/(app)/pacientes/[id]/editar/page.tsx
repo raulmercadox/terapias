@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+  puede,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { nombreCompleto } from "@/lib/utils";
@@ -18,7 +23,8 @@ export default async function EditarPacientePage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
+  if (!puede(user, "EDITAR_DATOS_PACIENTE")) notFound();
 
   const paciente = await prisma.paciente.findUnique({ where: { id } });
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();

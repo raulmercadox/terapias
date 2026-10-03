@@ -5,7 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, assertSedeAccess, assertRolGestion } from "@/lib/session";
+import {
+  requireUser,
+  assertSedeAccess,
+  assertAccesoClinico,
+  esAutorClinico,
+  evaluadorParaGuardar,
+  puede,
+} from "@/lib/session";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { normalizarPlantilla } from "@/lib/fichas/plantilla";
 import { reconciliar, snapshotDe } from "@/lib/fichas/snapshot";
@@ -73,7 +80,6 @@ export async function crearEvaluacion(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
@@ -81,12 +87,16 @@ export async function crearEvaluacion(
   });
   if (!paciente) return { error: "El paciente no existe." };
   await assertSedeAccess(user, paciente.sedeId);
+  await assertAccesoClinico(user, pacienteId);
 
   const parsed = parseCampos(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Revisa el formulario." };
   }
-  const d = parsed.data;
+  const d = {
+    ...parsed.data,
+    evaluadorId: evaluadorParaGuardar(user, parsed.data.evaluadorId),
+  };
 
   const errorEvaluador = await validarEvaluador(d.evaluadorId, paciente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };
@@ -132,7 +142,12 @@ export async function crearEvaluacion(
     return ev;
   });
 
-  if (d.aplicarPrograma && d.programaRecomendado) {
+  // Cambiar el programa del paciente es editar sus datos (permiso del terapeuta).
+  if (
+    d.aplicarPrograma &&
+    d.programaRecomendado &&
+    puede(user, "EDITAR_DATOS_PACIENTE")
+  ) {
     await prisma.paciente.update({
       where: { id: pacienteId },
       data: { programa: d.programaRecomendado },
@@ -151,20 +166,32 @@ export async function actualizarEvaluacion(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
 
   const existente = await prisma.evaluacion.findUnique({
     where: { id: evaluacionId },
-    select: { sedeId: true, pacienteId: true, fecha: true, estructura: true },
+    select: {
+      sedeId: true,
+      pacienteId: true,
+      fecha: true,
+      estructura: true,
+      evaluadorId: true,
+    },
   });
   if (!existente) return { error: "La evaluación no existe." };
   await assertSedeAccess(user, existente.sedeId);
+  await assertAccesoClinico(user, existente.pacienteId);
+  if (!esAutorClinico(user, existente.evaluadorId)) {
+    return { error: "Solo puede editar las evaluaciones que usted registró." };
+  }
 
   const parsed = parseCampos(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Revisa el formulario." };
   }
-  const d = parsed.data;
+  const d = {
+    ...parsed.data,
+    evaluadorId: evaluadorParaGuardar(user, parsed.data.evaluadorId),
+  };
 
   const errorEvaluador = await validarEvaluador(d.evaluadorId, existente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };
@@ -193,7 +220,12 @@ export async function actualizarEvaluacion(
     revalidatePath("/seguimiento");
   }
 
-  if (d.aplicarPrograma && d.programaRecomendado) {
+  // Cambiar el programa del paciente es editar sus datos (permiso del terapeuta).
+  if (
+    d.aplicarPrograma &&
+    d.programaRecomendado &&
+    puede(user, "EDITAR_DATOS_PACIENTE")
+  ) {
     await prisma.paciente.update({
       where: { id: existente.pacienteId },
       data: { programa: d.programaRecomendado },
@@ -213,14 +245,17 @@ export async function actualizarAPlantillaVigente(
   evaluacionId: string,
 ): Promise<void> {
   const user = await requireUser();
-  assertRolGestion(user);
 
   const existente = await prisma.evaluacion.findUnique({
     where: { id: evaluacionId },
-    select: { sedeId: true, pacienteId: true, valores: true },
+    select: { sedeId: true, pacienteId: true, valores: true, evaluadorId: true },
   });
   if (!existente) throw new Error("La evaluación no existe.");
   await assertSedeAccess(user, existente.sedeId);
+  await assertAccesoClinico(user, existente.pacienteId);
+  if (!esAutorClinico(user, existente.evaluadorId)) {
+    throw new Error("Solo puede actualizar las evaluaciones que usted registró.");
+  }
 
   const { plantilla, version } = await obtenerPlantilla(user.centroId, "EVALUACION");
   const { estructura, valores } = reconciliar(existente.valores, plantilla);

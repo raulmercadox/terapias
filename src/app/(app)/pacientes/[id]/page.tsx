@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+  esTerapeuta,
+  puede,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -52,7 +58,7 @@ export default async function PacienteDetallePage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id },
@@ -87,6 +93,12 @@ export default async function PacienteDetallePage({
 
   const pendiente = pendienteDe(paciente.interacciones);
 
+  // El terapeuta ve la parte clínica: sin interacciones comerciales, alta/baja,
+  // paquetes ni pagos. Editar datos e historia depende de sus permisos.
+  const terapeuta = esTerapeuta(user);
+  const editaDatos = puede(user, "EDITAR_DATOS_PACIENTE");
+  const editaHistoria = puede(user, "EDITAR_HISTORIA_CLINICA");
+
   const apoderados: ApoderadoVista[] = paciente.apoderados.map((a) => ({
     id: a.id,
     nombres: a.nombres,
@@ -112,10 +124,14 @@ export default async function PacienteDetallePage({
             ) : (
               <Badge color="red">BAJA</Badge>
             )}
-            <ButtonLink href={`/pacientes/${paciente.id}/editar`} variant="secondary">
-              Editar
-            </ButtonLink>
-            <EstadoToggle pacienteId={paciente.id} estado={paciente.estado} />
+            {editaDatos && (
+              <ButtonLink href={`/pacientes/${paciente.id}/editar`} variant="secondary">
+                Editar
+              </ButtonLink>
+            )}
+            {!terapeuta && (
+              <EstadoToggle pacienteId={paciente.id} estado={paciente.estado} />
+            )}
           </>
         }
       />
@@ -165,6 +181,7 @@ export default async function PacienteDetallePage({
             </dl>
           </Card>
 
+          {!terapeuta && (
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -233,6 +250,7 @@ export default async function PacienteDetallePage({
               </ul>
             )}
           </Card>
+          )}
 
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -261,12 +279,14 @@ export default async function PacienteDetallePage({
                   Ver historia
                 </ButtonLink>
               ) : (
-                <ButtonLink
-                  href={`/pacientes/${paciente.id}/historia/nueva`}
-                  variant="secondary"
-                >
-                  Registrar historia
-                </ButtonLink>
+                editaHistoria && (
+                  <ButtonLink
+                    href={`/pacientes/${paciente.id}/historia/nueva`}
+                    variant="secondary"
+                  >
+                    Registrar historia
+                  </ButtonLink>
+                )
               )}
             </div>
           </Card>
@@ -379,7 +399,11 @@ export default async function PacienteDetallePage({
             )}
           </Card>
 
-          <ApoderadosPanel pacienteId={paciente.id} apoderados={apoderados} />
+          <ApoderadosPanel
+            pacienteId={paciente.id}
+            apoderados={apoderados}
+            editable={editaDatos}
+          />
         </div>
 
         <div className="space-y-6">
@@ -394,6 +418,7 @@ export default async function PacienteDetallePage({
             </Card>
           )}
 
+          {!terapeuta && (
           <Card>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
               Accesos rápidos
@@ -419,6 +444,7 @@ export default async function PacienteDetallePage({
               </ButtonLink>
             </div>
           </Card>
+          )}
         </div>
       </div>
     </div>

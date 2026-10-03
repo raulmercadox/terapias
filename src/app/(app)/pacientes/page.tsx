@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser, requireActiveSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  requireActiveSede,
+  puedeVerClinica,
+  esTerapeuta,
+  puede,
+  whereMisPacientes,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import {
   PageHeader,
@@ -27,7 +34,9 @@ export default async function PacientesPage({
   searchParams: Promise<{ q?: string; estado?: string; pagina?: string }>;
 }) {
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  if (!puedeVerClinica(user)) notFound();
+  // El terapeuta ve solo los pacientes que atiende (o toda la sede con permiso).
+  const terapeuta = esTerapeuta(user);
   const sedeId = await requireActiveSede(user);
   const { q, estado: estadoParam, pagina: paginaParam } = await searchParams;
   const termino = (q ?? "").trim();
@@ -37,6 +46,7 @@ export default async function PacientesPage({
 
   const where = {
     sedeId,
+    ...whereMisPacientes(user),
     ...(estado === "TODOS" ? {} : { estado }),
     ...(termino
       ? {
@@ -74,10 +84,16 @@ export default async function PacientesPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Pacientes"
-        subtitle="Niños registrados en la sede activa"
+        title={terapeuta ? "Mis pacientes" : "Pacientes"}
+        subtitle={
+          terapeuta && !puede(user, "VER_PACIENTES_SEDE")
+            ? "Niños que atiendes en la sede"
+            : "Niños registrados en la sede activa"
+        }
         actions={
-          <ButtonLink href="/pacientes/nuevo">Registrar nuevo</ButtonLink>
+          !terapeuta && (
+            <ButtonLink href="/pacientes/nuevo">Registrar nuevo</ButtonLink>
+          )
         }
       />
 

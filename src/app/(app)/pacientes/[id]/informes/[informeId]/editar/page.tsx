@@ -1,5 +1,11 @@
 import { notFound } from "next/navigation";
-import { requireUser, canAccessSede, puedeVerPagos } from "@/lib/session";
+import {
+  requireUser,
+  canAccessSede,
+  requireAccesoClinico,
+  evaluadorFijoDe,
+  esAutorClinico,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
 import { nombreCompleto, fechaInput } from "@/lib/utils";
@@ -14,7 +20,7 @@ export default async function EditarInformePage({
 }) {
   const { id, informeId } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const informe = await prisma.informeAvance.findUnique({
     where: { id: informeId },
@@ -33,6 +39,11 @@ export default async function EditarInformePage({
   if (!informe || informe.pacienteId !== id) notFound();
   if (!(await canAccessSede(user, informe.sedeId))) notFound();
 
+  // El terapeuta solo edita lo que él registró.
+  if (!esAutorClinico(user, informe.evaluadorId)) notFound();
+  // Para el terapeuta, el evaluador es él mismo y no se puede cambiar.
+  const evaluadorFijo = await evaluadorFijoDe(user);
+
   const terapeutas = await prisma.terapeuta.findMany({
     where: { sedeId: informe.sedeId, activo: true },
     orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
@@ -49,6 +60,7 @@ export default async function EditarInformePage({
       />
       <div className="max-w-4xl">
         <InformeForm
+          evaluadorFijo={evaluadorFijo}
           action={accion}
           terapeutas={terapeutas.map((t) => ({
             id: t.id,

@@ -4,7 +4,12 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireUser, assertSedeAccess, assertRolGestion } from "@/lib/session";
+import {
+  requireUser,
+  assertSedeAccess,
+  assertAccesoClinico,
+  assertPermiso,
+} from "@/lib/session";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { parseValores } from "@/components/ficha/form-datos";
 import type { Prisma } from "@prisma/client";
@@ -29,7 +34,7 @@ export async function crearHistoria(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
+  assertPermiso(user, "EDITAR_HISTORIA_CLINICA");
 
   const paciente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
@@ -37,6 +42,7 @@ export async function crearHistoria(
   });
   if (!paciente) return { error: "El paciente no existe." };
   await assertSedeAccess(user, paciente.sedeId);
+  await assertAccesoClinico(user, pacienteId);
   if (paciente.historiaClinica) {
     return { error: "Este paciente ya tiene una historia clínica registrada." };
   }
@@ -67,7 +73,7 @@ export async function actualizarHistoria(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
+  assertPermiso(user, "EDITAR_HISTORIA_CLINICA");
 
   const existente = await prisma.historiaClinica.findUnique({
     where: { id: historiaId },
@@ -75,6 +81,7 @@ export async function actualizarHistoria(
   });
   if (!existente) return { error: "La historia clínica no existe." };
   await assertSedeAccess(user, existente.sedeId);
+  await assertAccesoClinico(user, existente.pacienteId);
 
   const parsed = historiaSchema.safeParse({ fecha: String(formData.get("fecha") ?? "") });
   if (!parsed.success) {

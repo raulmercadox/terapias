@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fecha, fechaInput, hoyLima, iniciales } from "./utils";
+import {
+  fecha,
+  fechaInput,
+  hoyLima,
+  horaLima,
+  iniciales,
+  sumarMinutos,
+} from "./utils";
 
 test("iniciales() toma las 2 primeras palabras significativas", () => {
   assert.equal(iniciales("Centro Demo"), "CD");
@@ -90,3 +97,15 @@ function anclarMedianocheEnNY(y: number, m: number, d: number): Date {
   // Medianoche local = 00:00 - offset (offset negativo => sumamos horas UTC).
   return new Date(Date.UTC(y, m - 1, d, -horas, 0, 0));
 }
+
+test("horaLima: hora de Perú redondeada hacia abajo a 5 minutos", () => {
+  // 2026-07-15T19:58:00Z = 14:58 en Lima (UTC-5).
+  assert.equal(horaLima(new Date("2026-07-15T19:58:00Z")), "14:55");
+  // Pasada la medianoche UTC sigue siendo el día anterior en Lima.
+  assert.equal(horaLima(new Date("2026-07-16T02:03:00Z")), "21:00");
+});
+
+test("sumarMinutos: suma y no cruza la medianoche", () => {
+  assert.equal(sumarMinutos("09:30", 45), "10:15");
+  assert.equal(sumarMinutos("23:30", 45), null);
+});

@@ -9,10 +9,31 @@ import {
   requireActiveSede,
   assertSedeAccess,
   assertRolGestion,
+  assertAccesoClinico,
+  assertPermiso,
+  esTerapeuta,
+  type SessionUser,
 } from "@/lib/session";
 import { CANALES } from "../seguimiento/seguimiento";
 
 /* ── Helpers ──────────────────────────────────────────── */
+
+/**
+ * Editar los datos de un paciente existente (y sus apoderados): coordinación y
+ * administración, o un terapeuta con EDITAR_DATOS_PACIENTE sobre un paciente
+ * que atiende.
+ */
+async function assertEdicionDatosPaciente(
+  user: SessionUser,
+  pacienteId: string,
+): Promise<void> {
+  if (esTerapeuta(user)) {
+    assertPermiso(user, "EDITAR_DATOS_PACIENTE");
+    await assertAccesoClinico(user, pacienteId);
+  } else {
+    assertRolGestion(user);
+  }
+}
 
 /** Convierte "" en undefined para campos opcionales del formulario. */
 function opt(value: FormDataEntryValue | null): string | undefined {
@@ -215,7 +236,7 @@ export async function actualizarPaciente(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
+  await assertEdicionDatosPaciente(user, pacienteId);
 
   const existente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
@@ -267,13 +288,14 @@ export async function cambiarEstado(pacienteId: string, estado: string) {
 /* ── Apoderados ───────────────────────────────────────── */
 
 /** Comprueba acceso al paciente dueño del apoderado y devuelve su sedeId. */
-async function assertPacienteAccess(user: Awaited<ReturnType<typeof requireUser>>, pacienteId: string) {
+async function assertPacienteAccess(user: SessionUser, pacienteId: string) {
   const paciente = await prisma.paciente.findUnique({
     where: { id: pacienteId },
     select: { sedeId: true },
   });
   if (!paciente) throw new Error("El paciente no existe.");
   await assertSedeAccess(user, paciente.sedeId);
+  await assertEdicionDatosPaciente(user, pacienteId);
 }
 
 function parseApoderadoForm(formData: FormData) {
@@ -298,7 +320,6 @@ export async function agregarApoderado(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
   await assertPacienteAccess(user, pacienteId);
 
   const parsed = parseApoderadoForm(formData);
@@ -341,7 +362,7 @@ export async function actualizarApoderado(
   formData: FormData,
 ): Promise<FormState> {
   const user = await requireUser();
-  assertRolGestion(user);
+  // El rol se valida en assertPacienteAccess (también el terapeuta con permiso).
 
   const apo = await prisma.apoderado.findUnique({
     where: { id: apoderadoId },
@@ -386,7 +407,7 @@ export async function actualizarApoderado(
 
 export async function eliminarApoderado(apoderadoId: string) {
   const user = await requireUser();
-  assertRolGestion(user);
+  // El rol se valida en assertPacienteAccess (también el terapeuta con permiso).
 
   const apo = await prisma.apoderado.findUnique({
     where: { id: apoderadoId },

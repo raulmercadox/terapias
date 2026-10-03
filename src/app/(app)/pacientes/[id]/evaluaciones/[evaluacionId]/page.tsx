@@ -4,7 +4,8 @@ import {
   requireUser,
   canAccessSede,
   getCentro,
-  puedeVerPagos,
+  requireAccesoClinico,
+  esAutorClinico,
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, Card, Badge, ButtonLink } from "@/components/ui";
@@ -36,7 +37,7 @@ export default async function EvaluacionDetallePage({
 }) {
   const { id, evaluacionId } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const evaluacion = await prisma.evaluacion.findUnique({
     where: { id: evaluacionId },
@@ -89,12 +90,14 @@ export default async function EvaluacionDetallePage({
                 Volver al paciente
               </ButtonLink>
               <ImprimirBoton />
-              <ButtonLink
-                href={`/pacientes/${p.id}/evaluaciones/${evaluacion.id}/editar`}
-                variant="secondary"
-              >
-                Editar
-              </ButtonLink>
+              {esAutorClinico(user, evaluacion.evaluadorId) && (
+                <ButtonLink
+                  href={`/pacientes/${p.id}/evaluaciones/${evaluacion.id}/editar`}
+                  variant="secondary"
+                >
+                  Editar
+                </ButtonLink>
+              )}
               {user.rol === "ADMINISTRADOR" && (
                 <EliminarEvaluacionBoton evaluacionId={evaluacion.id} />
               )}
@@ -110,7 +113,9 @@ export default async function EvaluacionDetallePage({
             plantilla; la vigente del centro es la {vigente.version}. Se conserva tal
             como se registró.
           </span>
-          <ActualizarPlantillaBoton evaluacionId={evaluacion.id} />
+          {esAutorClinico(user, evaluacion.evaluadorId) && (
+            <ActualizarPlantillaBoton evaluacionId={evaluacion.id} />
+          )}
         </div>
       )}
 

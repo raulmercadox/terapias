@@ -191,11 +191,14 @@ export function InformeForm({
   terapeutas,
   inicial,
   cancelarHref,
+  evaluadorFijo,
 }: {
   action: Action;
   terapeutas: { id: string; nombre: string }[];
   inicial: InformeInicial;
   cancelarHref: string;
+  /** Terapeuta que registra: queda como profesional y no se puede cambiar. */
+  evaluadorFijo?: { id: string; nombre: string };
 }) {
   const {
     estado: state,
@@ -225,14 +228,21 @@ export function InformeForm({
             />
           </Field>
           <Field label="Profesional que informa">
-            <Select name="evaluadorId" defaultValue={inicial.evaluadorId ?? ""}>
-              <option value="">— Sin asignar —</option>
-              {terapeutas.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nombre}
-                </option>
-              ))}
-            </Select>
+            {evaluadorFijo ? (
+              <>
+                <input type="hidden" name="evaluadorId" value={evaluadorFijo.id} />
+                <Input value={evaluadorFijo.nombre} readOnly disabled />
+              </>
+            ) : (
+              <Select name="evaluadorId" defaultValue={inicial.evaluadorId ?? ""}>
+                <option value="">— Sin asignar —</option>
+                {terapeutas.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
         </div>
         <p className="mt-4 text-xs text-slate-500">

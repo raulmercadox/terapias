@@ -4,7 +4,8 @@ import {
   requireUser,
   canAccessSede,
   getCentro,
-  puedeVerPagos,
+  requireAccesoClinico,
+  puede,
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, Card, ButtonLink } from "@/components/ui";
@@ -27,7 +28,7 @@ export default async function HistoriaClinicaPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  if (!puedeVerPagos(user)) notFound();
+  await requireAccesoClinico(user, id);
 
   const paciente = await prisma.paciente.findUnique({
     where: { id },
@@ -53,11 +54,13 @@ export default async function HistoriaClinicaPage({
           <p className="text-sm text-slate-500">
             Este paciente aún no tiene historia clínica registrada.
           </p>
-          <div className="mt-4">
-            <ButtonLink href={`/pacientes/${paciente.id}/historia/nueva`}>
-              Registrar historia clínica
-            </ButtonLink>
-          </div>
+          {puede(user, "EDITAR_HISTORIA_CLINICA") && (
+            <div className="mt-4">
+              <ButtonLink href={`/pacientes/${paciente.id}/historia/nueva`}>
+                Registrar historia clínica
+              </ButtonLink>
+            </div>
+          )}
         </Card>
       </div>
     );
@@ -85,12 +88,14 @@ export default async function HistoriaClinicaPage({
                 Volver al paciente
               </ButtonLink>
               <ImprimirBoton />
-              <ButtonLink
-                href={`/pacientes/${paciente.id}/historia/editar`}
-                variant="secondary"
-              >
-                Editar
-              </ButtonLink>
+              {puede(user, "EDITAR_HISTORIA_CLINICA") && (
+                <ButtonLink
+                  href={`/pacientes/${paciente.id}/historia/editar`}
+                  variant="secondary"
+                >
+                  Editar
+                </ButtonLink>
+              )}
               {user.rol === "ADMINISTRADOR" && (
                 <EliminarHistoriaBoton historiaId={historia.id} />
               )}

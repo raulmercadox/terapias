@@ -1,4 +1,5 @@
-import { requireUser, requireActiveSede } from "@/lib/session";
+import { notFound } from "next/navigation";
+import { requireUser, requireActiveSede, esTerapeuta } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, Card } from "@/components/ui";
 import { nombreCompleto } from "@/lib/utils";
@@ -11,6 +12,8 @@ export default async function NuevaCitaPage({
   searchParams: Promise<{ fecha?: string }>;
 }) {
   const user = await requireUser();
+  // El terapeuta no gestiona paquetes ni agenda citas libremente.
+  if (esTerapeuta(user)) notFound();
   const sedeId = await requireActiveSede(user);
   const { fecha: fechaParam } = await searchParams;
 
