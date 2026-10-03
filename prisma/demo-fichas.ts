@@ -258,12 +258,30 @@ export async function sembrarFichas(prisma: PrismaClient): Promise<string[]> {
   await prisma.terapeuta.deleteMany({ where: { sedeId: sedeFisio.id } });
   await prisma.programaTerapia.deleteMany({ where: { sedeId: sedeFisio.id } });
 
-  await prisma.terapeuta.createMany({
-    data: [
-      { sedeId: sedeFisio.id, nombres: "Gabriela", apellidos: "Ríos Mendoza", especialidad: "Fisioterapia traumatológica" },
-      { sedeId: sedeFisio.id, nombres: "Álvaro", apellidos: "Benavides León", especialidad: "Terapia deportiva" },
-    ],
-  });
+  for (const [nombres, apellidos, nombre] of [
+    ["Gabriela", "Ríos Mendoza", "Fisioterapia traumatológica"],
+    ["Álvaro", "Benavides León", "Terapia deportiva"],
+  ]) {
+    await prisma.terapeuta.create({
+      data: {
+        sedeId: sedeFisio.id,
+        nombres,
+        apellidos,
+        especialidades: {
+          create: [
+            {
+              especialidad: {
+                connectOrCreate: {
+                  where: { centroId_nombre: { centroId: fisio.id, nombre } },
+                  create: { centroId: fisio.id, nombre },
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+  }
   await prisma.programaTerapia.createMany({
     data: [
       { sedeId: sedeFisio.id, nombre: "Rehabilitación traumatológica", duracionMin: 45 },

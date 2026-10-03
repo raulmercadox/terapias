@@ -33,22 +33,41 @@ export default async function TerapeutasPage({
   const editarId = typeof editar === "string" ? editar : undefined;
   const vacacionId = typeof vacacion === "string" ? vacacion : undefined;
 
-  const [terapeutas, sedes] = await Promise.all([
+  const [terapeutas, sedes, catalogoEspecialidades] = await Promise.all([
     prisma.terapeuta.findMany({
       where: { sede: { centroId: user.centroId } },
       orderBy: [{ activo: "desc" }, { apellidos: "asc" }],
-      include: { sede: { select: { nombre: true } } },
+      include: {
+        sede: { select: { nombre: true } },
+        especialidades: {
+          orderBy: { especialidad: { nombre: "asc" } },
+          select: { especialidad: { select: { id: true, nombre: true } } },
+        },
+      },
     }),
     prisma.sede.findMany({
       where: { centroId: user.centroId, activo: true },
       orderBy: { nombre: "asc" },
       select: { id: true, nombre: true },
     }),
+    prisma.especialidad.findMany({
+      where: { centroId: user.centroId },
+      orderBy: { nombre: "asc" },
+      select: { id: true, nombre: true, activo: true },
+    }),
   ]);
 
   const terapeutaEnEdicion = editarId
     ? terapeutas.find((t) => t.id === editarId)
     : undefined;
+  const especialidadIdsEnEdicion =
+    terapeutaEnEdicion?.especialidades.map((te) => te.especialidad.id) ?? [];
+
+  // Para asignar solo se ofrecen las activas; las inactivas que el terapeuta
+  // ya tiene se muestran igual para no perderlas al guardar.
+  const especialidadesOpciones = catalogoEspecialidades.filter(
+    (e) => e.activo || especialidadIdsEnEdicion.includes(e.id),
+  );
 
   // Vacaciones del terapeuta en edición, con cuántas sesiones siguen agendadas
   // dentro de cada rango (hay que reprogramarlas o reasignarlas a mano).
@@ -114,7 +133,7 @@ export default async function TerapeutasPage({
                 <tr>
                   <Th>Nombre</Th>
                   <Th>Sede</Th>
-                  <Th>Especialidad</Th>
+                  <Th>Especialidades</Th>
                   <Th>Teléfono</Th>
                   <Th>Refrigerio</Th>
                   <Th>Estado</Th>
@@ -128,7 +147,13 @@ export default async function TerapeutasPage({
                       {t.apellidos}, {t.nombres}
                     </Td>
                     <Td>{t.sede.nombre}</Td>
-                    <Td>{t.especialidad ?? "—"}</Td>
+                    <Td>
+                      {t.especialidades.length > 0
+                        ? t.especialidades
+                            .map((te) => te.especialidad.nombre)
+                            .join(", ")
+                        : "—"}
+                    </Td>
                     <Td>{t.telefono ?? "—"}</Td>
                     <Td>
                       {t.refrigerioInicio && t.refrigerioFin ? (
@@ -167,6 +192,7 @@ export default async function TerapeutasPage({
             <TerapeutaForm
               key={terapeutaEnEdicion?.id ?? "nuevo"}
               sedes={sedes}
+              especialidades={especialidadesOpciones}
               terapeuta={
                 terapeutaEnEdicion
                   ? {
@@ -174,7 +200,7 @@ export default async function TerapeutasPage({
                       sedeId: terapeutaEnEdicion.sedeId,
                       nombres: terapeutaEnEdicion.nombres,
                       apellidos: terapeutaEnEdicion.apellidos,
-                      especialidad: terapeutaEnEdicion.especialidad,
+                      especialidadIds: especialidadIdsEnEdicion,
                       telefono: terapeutaEnEdicion.telefono,
                       activo: terapeutaEnEdicion.activo,
                       refrigerioInicio: terapeutaEnEdicion.refrigerioInicio,

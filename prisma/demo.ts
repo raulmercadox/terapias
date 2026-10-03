@@ -256,13 +256,28 @@ async function main() {
   }
 
   /* ── Terapeutas ─────────────────────────────────────────── */
+  // Vincula la especialidad del catálogo del centro (la crea si no existe).
+  const especialidad = (nombre: string) => ({
+    especialidades: {
+      create: [
+        {
+          especialidad: {
+            connectOrCreate: {
+              where: { centroId_nombre: { centroId: centro.id, nombre } },
+              create: { centroId: centro.id, nombre },
+            },
+          },
+        },
+      ],
+    },
+  });
   const [ana, luis, carmen] = await Promise.all([
     prisma.terapeuta.create({
       data: {
         sedeId: principal.id,
         nombres: "Ana",
         apellidos: "Ramírez Cueva",
-        especialidad: "Terapia de lenguaje",
+        ...especialidad("Terapia de lenguaje"),
         telefono: telefono(90),
       },
     }),
@@ -271,7 +286,7 @@ async function main() {
         sedeId: principal.id,
         nombres: "Luis",
         apellidos: "Torres Aguilar",
-        especialidad: "Terapia ocupacional",
+        ...especialidad("Terapia ocupacional"),
         telefono: telefono(91),
       },
     }),
@@ -280,7 +295,7 @@ async function main() {
         sedeId: principal.id,
         nombres: "Carmen",
         apellidos: "Vega Ponce",
-        especialidad: "Psicopedagogía",
+        ...especialidad("Psicopedagogía"),
         telefono: telefono(92),
       },
     }),
@@ -291,7 +306,7 @@ async function main() {
         sedeId: sjl.id,
         nombres: "Rocío",
         apellidos: "Salazar Pinto",
-        especialidad: "Terapia de lenguaje",
+        ...especialidad("Terapia de lenguaje"),
         telefono: telefono(93),
       },
     }),
@@ -300,7 +315,7 @@ async function main() {
         sedeId: sjl.id,
         nombres: "Jorge",
         apellidos: "Campos Neyra",
-        especialidad: "Terapia ocupacional",
+        ...especialidad("Terapia ocupacional"),
         telefono: telefono(94),
       },
     }),

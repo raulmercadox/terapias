@@ -117,23 +117,24 @@ enum ResultadoSalida {
 // Centro de terapias (tenant). Su `codigo` es lo que se escribe en el campo
 // "Empresa" del login; `nombre` y `subtitulo` son la marca en pantallas.
 model Centro {
-  id        String   @id @default(cuid())
-  codigo    String   @unique // minúsculas, números y guiones
-  nombre    String
-  subtitulo String?
-  activo    Boolean  @default(true) // inactivo = nadie del centro puede entrar
+  id                String    @id @default(cuid())
+  codigo            String    @unique // minúsculas, números y guiones
+  nombre            String
+  subtitulo         String?
+  activo            Boolean   @default(true) // inactivo = nadie del centro puede entrar
   // Logo del centro (data URL PNG/JPG/WebP, máx. 450 KB): menú y documentos impresos.
   // Se sirve por /api/centro/logo; logoActualizadoEn versiona esa URL (null = sin logo)
   // para que getCentro no tenga que cargar la imagen en cada request.
   logoBase64        String?
   logoActualizadoEn DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  sedes         Sede[]
-  usuarios      User[]
-  configuracion Configuracion?
-  plantillas    PlantillaFicha[]
+  sedes          Sede[]
+  usuarios       User[]
+  configuracion  Configuracion?
+  plantillas     PlantillaFicha[]
+  especialidades Especialidad[]
 }
 
 // Cómo se calcula el plazo para pagar un paquete (periodo de gracia).
@@ -258,27 +259,54 @@ model UserSede {
 
 // Profesionales que atienden (licenciadas/terapeutas). Independiente del login.
 model Terapeuta {
-  id           String   @id @default(cuid())
-  sedeId       String
-  nombres      String
-  apellidos    String
-  especialidad String?
-  telefono     String?
-  activo       Boolean  @default(true)
+  id               String   @id @default(cuid())
+  sedeId           String
+  nombres          String
+  apellidos        String
+  telefono         String?
+  activo           Boolean  @default(true)
   // Refrigerio propio (opcional): si está configurado reemplaza al de la sede
   // para este terapeuta. Ambos campos van juntos (los dos con valor o null).
   refrigerioInicio String? // "HH:mm"
   refrigerioFin    String? // "HH:mm"
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  sede           Sede                @relation(fields: [sedeId], references: [id])
+  sede           Sede                    @relation(fields: [sedeId], references: [id])
   citas          Cita[]
   evaluaciones   Evaluacion[]
   informesAvance InformeAvance[]
   vacaciones     VacacionTerapeuta[]
+  especialidades TerapeutaEspecialidad[]
 
   @@index([sedeId])
+}
+
+// Catálogo de especialidades del centro (vale para todas sus sedes). No se
+// borran: se desactivan, y los terapeutas que ya la tienen la conservan.
+model Especialidad {
+  id        String   @id @default(cuid())
+  centroId  String
+  nombre    String
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  centro     Centro                  @relation(fields: [centroId], references: [id], onDelete: Cascade)
+  terapeutas TerapeutaEspecialidad[]
+
+  @@unique([centroId, nombre])
+}
+
+// Especialidades de cada terapeuta (uno o más).
+model TerapeutaEspecialidad {
+  terapeutaId    String
+  especialidadId String
+  terapeuta      Terapeuta    @relation(fields: [terapeutaId], references: [id], onDelete: Cascade)
+  especialidad   Especialidad @relation(fields: [especialidadId], references: [id], onDelete: Cascade)
+
+  @@id([terapeutaId, especialidadId])
+  @@index([especialidadId])
 }
 
 // ─────────────────────────────────────────────────────────────

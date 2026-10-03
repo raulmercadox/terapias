@@ -288,7 +288,9 @@ const terapeutaSchema = z
     sedeId: z.string().min(1, "La sede es obligatoria."),
     nombres: z.string().trim().min(1, "Los nombres son obligatorios."),
     apellidos: z.string().trim().min(1, "Los apellidos son obligatorios."),
-    especialidad: z.string().trim().optional().nullable(),
+    especialidadIds: z
+      .array(z.string())
+      .min(1, "Seleccione al menos una especialidad."),
     telefono: z.string().trim().optional().nullable(),
     activo: z.boolean(),
     // Refrigerio propio opcional: vacío = usa el de la sede.
@@ -309,7 +311,7 @@ function parseTerapeutaForm(formData: FormData) {
     sedeId: String(formData.get("sedeId") ?? ""),
     nombres: String(formData.get("nombres") ?? ""),
     apellidos: String(formData.get("apellidos") ?? ""),
-    especialidad: String(formData.get("especialidad") ?? "") || null,
+    especialidadIds: formData.getAll("especialidadIds").map((s) => String(s)),
     telefono: String(formData.get("telefono") ?? "") || null,
     activo: formData.get("activo") === "on",
     refrigerioInicio: String(formData.get("refrigerioInicio") ?? ""),
@@ -331,7 +333,7 @@ export async function guardarTerapeuta(
     sedeId,
     nombres,
     apellidos,
-    especialidad,
+    especialidadIds,
     telefono,
     activo,
     refrigerioInicio,
@@ -350,11 +352,19 @@ export async function guardarTerapeuta(
     };
   }
 
+  const idsUnicos = [...new Set(especialidadIds)];
+  const encontradas = await prisma.especialidad.count({
+    where: { id: { in: idsUnicos }, centroId },
+  });
+  if (encontradas !== idsUnicos.length) {
+    return { error: "Alguna de las especialidades seleccionadas no existe." };
+  }
+  const especialidades = idsUnicos.map((especialidadId) => ({ especialidadId }));
+
   const data = {
     sedeId,
     nombres,
     apellidos,
-    especialidad,
     telefono,
     activo,
     // Vacío = usa el refrigerio de la sede; los dos campos van juntos.
@@ -368,9 +378,17 @@ export async function guardarTerapeuta(
     });
     if (!actual) return { error: "Terapeuta no encontrado." };
 
-    await prisma.terapeuta.update({ where: { id }, data });
+    await prisma.terapeuta.update({
+      where: { id },
+      data: {
+        ...data,
+        especialidades: { deleteMany: {}, create: especialidades },
+      },
+    });
   } else {
-    await prisma.terapeuta.create({ data });
+    await prisma.terapeuta.create({
+      data: { ...data, especialidades: { create: especialidades } },
+    });
   }
 
   revalidatePath("/configuracion/terapeutas");
@@ -460,6 +478,59 @@ export async function eliminarVacacion(
 
   revalidatePath("/configuracion/terapeutas");
   redirect(`/configuracion/terapeutas?editar=${vacacion.terapeutaId}`);
+}
+
+/* ════════════════════════════════════════════════════════
+ * ESPECIALIDADES (catálogo por centro, vale para todas sus sedes)
+ * ════════════════════════════════════════════════════════ */
+
+const especialidadSchema = z.object({
+  nombre: z.string().trim().min(1, "El nombre es obligatorio."),
+  activo: z.boolean(),
+});
+
+export async function guardarEspecialidad(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { centroId } = await requireAdmin();
+
+  const id = String(formData.get("id") ?? "");
+  const parsed = especialidadSchema.safeParse({
+    nombre: String(formData.get("nombre") ?? ""),
+    activo: formData.get("activo") === "on",
+  });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+
+  const { nombre, activo } = parsed.data;
+
+  // Nombre único en el centro sin distinguir mayúsculas (excluyendo la propia al editar).
+  const existente = await prisma.especialidad.findFirst({
+    where: { centroId, nombre: { equals: nombre, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (existente && existente.id !== id) {
+    return { error: "Ya existe una especialidad con ese nombre." };
+  }
+
+  if (id) {
+    const actual = await prisma.especialidad.findFirst({
+      where: { id, centroId },
+      select: { id: true },
+    });
+    if (!actual) return { error: "Especialidad no encontrada." };
+
+    await prisma.especialidad.update({
+      where: { id },
+      data: { nombre, activo },
+    });
+  } else {
+    await prisma.especialidad.create({ data: { centroId, nombre, activo } });
+  }
+
+  revalidatePath("/configuracion/especialidades");
+  revalidatePath("/configuracion/terapeutas");
+  redirect("/configuracion/especialidades");
 }
 
 /* ════════════════════════════════════════════════════════

@@ -2,16 +2,18 @@
 
 import { useFormReintento } from "@/components/form-reintento";
 import { guardarTerapeuta, type FormState } from "../actions";
+import Link from "next/link";
 import { Button, ButtonLink, Field, Input, Select } from "@/components/ui";
 
 type SedeOpcion = { id: string; nombre: string };
+type EspecialidadOpcion = { id: string; nombre: string; activo: boolean };
 
 type TerapeutaInicial = {
   id: string;
   sedeId: string;
   nombres: string;
   apellidos: string;
-  especialidad: string | null;
+  especialidadIds: string[];
   telefono: string | null;
   activo: boolean;
   refrigerioInicio: string | null;
@@ -20,9 +22,11 @@ type TerapeutaInicial = {
 
 export function TerapeutaForm({
   sedes,
+  especialidades,
   terapeuta,
 }: {
   sedes: SedeOpcion[];
+  especialidades: EspecialidadOpcion[];
   terapeuta?: TerapeutaInicial;
 }) {
   const {
@@ -55,11 +59,39 @@ export function TerapeutaForm({
       <Field label="Apellidos" required>
         <Input name="apellidos" defaultValue={terapeuta?.apellidos} required />
       </Field>
-      <Field label="Especialidad">
-        <Input
-          name="especialidad"
-          defaultValue={terapeuta?.especialidad ?? ""}
-        />
+      <Field label="Especialidades" required>
+        {especialidades.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No hay especialidades registradas.{" "}
+            <Link
+              href="/configuracion/especialidades"
+              className="text-sky-600 underline hover:text-sky-700"
+            >
+              Crear especialidades
+            </Link>
+          </p>
+        ) : (
+          <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+            {especialidades.map((e) => (
+              <label
+                key={e.id}
+                className="flex items-center gap-2 text-sm text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  name="especialidadIds"
+                  value={e.id}
+                  defaultChecked={terapeuta?.especialidadIds.includes(e.id)}
+                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                {e.nombre}
+                {!e.activo && (
+                  <span className="text-xs text-slate-400">(inactiva)</span>
+                )}
+              </label>
+            ))}
+          </div>
+        )}
       </Field>
       <Field label="Teléfono">
         <Input name="telefono" defaultValue={terapeuta?.telefono ?? ""} />

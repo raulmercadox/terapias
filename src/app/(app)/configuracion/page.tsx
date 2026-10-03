@@ -27,6 +27,12 @@ export default async function ConfiguracionPage() {
       icon: "🧑‍⚕️",
     },
     {
+      label: "Especialidades",
+      descripcion: "Catálogo de especialidades de los terapeutas.",
+      href: "/configuracion/especialidades",
+      icon: "🎓",
+    },
+    {
       label: "Programas",
       descripcion: "Programas de terapia y la duración de sus sesiones.",
       href: "/configuracion/programas",

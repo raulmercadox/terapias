@@ -52,7 +52,14 @@ export default async function DetalleCitaPage({
         },
       },
       terapeuta: {
-        select: { nombres: true, apellidos: true, especialidad: true },
+        select: {
+          nombres: true,
+          apellidos: true,
+          especialidades: {
+            orderBy: { especialidad: { nombre: "asc" } },
+            select: { especialidad: { select: { nombre: true } } },
+          },
+        },
       },
       observaciones: {
         orderBy: { createdAt: "desc" },
@@ -106,8 +113,10 @@ export default async function DetalleCitaPage({
             <dd className="col-span-2 text-slate-800">
               {cita.terapeuta
                 ? `${cita.terapeuta.apellidos} ${cita.terapeuta.nombres}` +
-                  (cita.terapeuta.especialidad
-                    ? ` (${cita.terapeuta.especialidad})`
+                  (cita.terapeuta.especialidades.length > 0
+                    ? ` (${cita.terapeuta.especialidades
+                        .map((te) => te.especialidad.nombre)
+                        .join(", ")})`
                     : "")
                 : "Sin asignar"}
             </dd>

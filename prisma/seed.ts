@@ -68,11 +68,24 @@ async function main() {
     { nombres: "Ana", apellidos: "Ramírez", especialidad: "Terapia de lenguaje" },
     { nombres: "Luis", apellidos: "Torres", especialidad: "Terapia ocupacional" },
   ];
-  for (const t of terapeutas) {
+  for (const { especialidad: nombre, ...t } of terapeutas) {
+    const especialidad = await prisma.especialidad.upsert({
+      where: { centroId_nombre: { centroId: centro.id, nombre } },
+      update: {},
+      create: { centroId: centro.id, nombre },
+    });
     const existe = await prisma.terapeuta.findFirst({
       where: { nombres: t.nombres, sedeId: principal.id },
     });
-    if (!existe) await prisma.terapeuta.create({ data: { ...t, sedeId: principal.id } });
+    if (!existe) {
+      await prisma.terapeuta.create({
+        data: {
+          ...t,
+          sedeId: principal.id,
+          especialidades: { create: [{ especialidadId: especialidad.id }] },
+        },
+      });
+    }
   }
 
   console.log(
