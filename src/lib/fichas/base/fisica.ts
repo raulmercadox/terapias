@@ -7,6 +7,14 @@
 
 import type { Escala, Plantilla, TipoFicha } from "../tipos";
 import { ESCALA_EIEPLE } from "./psicologica";
+import { PALETA, type Leyenda } from "../mapa";
+
+/** Lo que se marca sobre el dibujo del cuerpo, como en la ficha en papel. */
+const LEYENDA_DOLOR: Leyenda = [
+  { color: PALETA[0], label: "Dolor" },
+  { color: PALETA[1], label: "Hormigueo o adormecimiento" },
+  { color: PALETA[2], label: "Rigidez" },
+];
 
 /* ── Escalas propias de la rehabilitación física ──────── */
 
@@ -107,6 +115,14 @@ const HISTORIA: Plantilla = {
           id: "dolor_g",
           campos: [
             { tipo: "texto", id: "localizacionDolor", label: "Localización e irradiación" },
+            {
+              tipo: "mapa",
+              id: "mapaDolor",
+              label: "Zona del dolor",
+              imagenId: "base:cuerpo",
+              leyenda: LEYENDA_DOLOR,
+              ayuda: "Marca sobre el dibujo dónde siente el dolor y hacia dónde se irradia.",
+            },
             {
               tipo: "opciones",
               id: "tipoDolor",
@@ -222,6 +238,13 @@ const EVALUACION: Plantilla = {
                 { id: "eva_nocturno", label: "Dolor nocturno" },
                 { id: "eva_palpacion", label: "Dolor a la palpación" },
               ],
+            },
+            {
+              tipo: "mapa",
+              id: "mapaDolorEval",
+              label: "Zona del dolor el día de la evaluación",
+              imagenId: "base:cuerpo",
+              leyenda: LEYENDA_DOLOR,
             },
           ],
         },

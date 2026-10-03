@@ -13,6 +13,7 @@ import {
   type Seccion,
   type ValoresFicha,
 } from "./tipos";
+import { esImagenValida, normalizarLeyenda } from "./mapa";
 
 /* ── Saneado ──────────────────────────────────────────── */
 
@@ -136,6 +137,10 @@ function campo(v: unknown): Campo | null {
         conObservacion: typeof v.conObservacion === "boolean" ? v.conObservacion : undefined,
         items,
       };
+    }
+    case "mapa": {
+      if (!label || !esImagenValida(v.imagenId)) return null;
+      return { tipo: "mapa", id, label, imagenId: v.imagenId, leyenda: normalizarLeyenda(v.leyenda), ayuda };
     }
     default:
       return null;

@@ -14,6 +14,7 @@
 import type { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { FISICA } from "../src/lib/fichas/base/fisica";
+import { PALETA, type Punto } from "../src/lib/fichas/mapa";
 import { lista, ops, plantillasDe, si, txt } from "./demo-fichas";
 import {
   claveFecha,
@@ -61,6 +62,47 @@ const TERAPIA_REALIZADA: Record<string, string> = {
   "Rehabilitación neurológica": "Facilitación neuromuscular, control de tronco y reeducación de la marcha.",
   "Pilates terapéutico": "Pilates en reformer: control del core y movilidad de columna.",
 };
+
+/* ── Dibujos sobre la silueta de fábrica (public/fichas/cuerpo.svg) ──
+ * Coordenadas normalizadas sobre la imagen de 440×530: el frente ocupa la mitad
+ * izquierda (la derecha del paciente queda a la izquierda) y la espalda la
+ * mitad derecha (la derecha del paciente queda a la derecha). */
+const ROJO = PALETA[0];
+const AZUL = PALETA[1];
+
+/** Sombreado en zigzag dentro de un rectángulo, como se marca con lápiz. */
+function sombreado(x0: number, x1: number, y0: number, y1: number, pasadas: number): Punto[] {
+  const out: Punto[] = [];
+  for (let i = 0; i <= pasadas; i++) {
+    const y = y0 + ((y1 - y0) * i) / pasadas;
+    out.push(i % 2 === 0 ? [x0, y] : [x1, y]);
+  }
+  return out;
+}
+
+/** Círculo alrededor de un punto (rx, ry por la proporción de la imagen). */
+function circulo(cx: number, cy: number, rx: number, ry = rx * (440 / 530)): Punto[] {
+  return Array.from({ length: 25 }, (_, i) => {
+    const a = (i / 24) * 2 * Math.PI;
+    return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)] as Punto;
+  });
+}
+
+const mapa = (...trazos: { c: string; p: Punto[] }[]) => ({ t: "mapa", imagen: "base:cuerpo", trazos });
+
+/** Ricardo: lumbar bajo con irradiación a la cara posterior del muslo derecho. */
+const DOLOR_RICARDO = mapa(
+  { c: ROJO, p: sombreado(0.71, 0.79, 0.41, 0.47, 6) },
+  { c: ROJO, p: sombreado(0.765, 0.795, 0.49, 0.68, 9) },
+  { c: AZUL, p: sombreado(0.77, 0.795, 0.73, 0.82, 5) },
+);
+/** Elena: hombro derecho, cara anterolateral. */
+const DOLOR_ELENA = mapa({ c: ROJO, p: sombreado(0.13, 0.19, 0.19, 0.25, 5) }, {
+  c: ROJO,
+  p: circulo(0.16, 0.22, 0.055),
+});
+/** Lucía: rodilla derecha operada. */
+const DOLOR_LUCIA = mapa({ c: ROJO, p: circulo(0.2, 0.715, 0.035) });
 
 /** Desde hoy + n días, el primer día que no sea domingo. */
 function diaHabil(n: number): Date {
@@ -772,6 +814,7 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
       mecanismoLesion: txt("Progresivo, tras una mudanza cargando peso."),
       evolucionSintomas: txt("Empeora en jornadas largas frente a la computadora."),
       localizacionDolor: txt("Lumbar bajo con irradiación a la cara posterior del muslo"),
+      mapaDolor: DOLOR_RICARDO,
       tipoDolor: ops("PUNZANTE", "ELECTRICO"),
       factoresAgravantes: txt("Permanecer sentado más de 30 minutos"),
       factoresAlivio: txt("Caminar y aplicar calor local"),
@@ -793,6 +836,7 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
       inicioSintomas: txt("Hace 2 meses"),
       mecanismoLesion: txt("Sobreuso: clases de vóley con muchos remates."),
       localizacionDolor: txt("Cara anterolateral del hombro derecho"),
+      mapaDolor: DOLOR_ELENA,
       tipoDolor: ops("SORDO", "PUNZANTE"),
       factoresAgravantes: txt("Dormir sobre el lado derecho, colgar ropa"),
       factoresAlivio: txt("Reposo y hielo"),
@@ -846,6 +890,7 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
         eva_nocturno: { valor: "5" },
         eva_palpacion: { valor: "6" },
       }),
+      mapaDolorEval: DOLOR_RICARDO,
       chk_rango_inferior: lista({
         rom_cadera_flex: { valor: "LIMITADO", obs: "por dolor" },
         rom_rodilla: { valor: "COMPLETO" },
@@ -884,6 +929,7 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
         eva_movimiento: { valor: "6", obs: "arco doloroso 70°–120°" },
         eva_nocturno: { valor: "5" },
       }),
+      mapaDolorEval: DOLOR_ELENA,
       chk_rango_superior: lista({
         rom_hombro_flex: { valor: "LIMITADO", obs: "flexión 140°" },
         rom_hombro_abd: { valor: "LIMITADO", obs: "abducción 120°" },
@@ -915,6 +961,7 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
         eva_reposo: { valor: "1" },
         eva_movimiento: { valor: "4" },
       }),
+      mapaDolorEval: DOLOR_LUCIA,
       chk_rango_inferior: lista({
         rom_rodilla: { valor: "LIMITADO", obs: "flexión 95°, extensión completa" },
         rom_cadera_flex: { valor: "COMPLETO" },

@@ -7,6 +7,7 @@ import { conObservacion, escalaDe, grupoVisible } from "@/lib/fichas/plantilla";
 import { tituloGrupo, tituloSeccion } from "@/lib/fichas/numeracion";
 import { huerfanos } from "@/lib/fichas/valores";
 import type { Campo, Plantilla, ValorCampo, ValoresFicha } from "@/lib/fichas/tipos";
+import { LeyendaMapa, MapaImagen } from "./mapa-vista";
 
 const ETIQUETA = "mb-1 block text-sm font-medium text-slate-700";
 
@@ -182,6 +183,22 @@ function CampoLeido({
       return (
         <ChecklistLeido campo={campo} valor={valor} plantilla={plantilla} seccion={seccion} />
       );
+    case "mapa":
+      return (
+        <div className="sm:col-span-2">
+          <dt className={ETIQUETA}>{campo.label}</dt>
+          <dd className="space-y-2">
+            {valor?.t === "mapa" ? (
+              <>
+                <MapaImagen imagen={valor.imagen} trazos={valor.trazos} />
+                <LeyendaMapa leyenda={campo.leyenda} />
+              </>
+            ) : (
+              <span className="text-sm text-slate-500">Sin marcas registradas.</span>
+            )}
+          </dd>
+        </div>
+      );
   }
 }
 
@@ -200,6 +217,8 @@ function textoHuerfano(valor: ValorCampo): string {
       return Object.entries(valor.items)
         .map(([id, i]) => `${id}: ${[i.valor, i.obs].filter(Boolean).join(" — ")}`)
         .join(" | ");
+    case "mapa":
+      return `Dibujo con ${valor.trazos.length} marca(s)`;
   }
 }
 
@@ -268,9 +287,19 @@ export function FichaVista({
             centro. No se borran: quedan aquí para no perder lo escrito.
           </p>
           <dl className="grid gap-4 sm:grid-cols-2">
-            {antiguos.map(([id, valor]) => (
-              <Dato key={id} label={id} value={textoHuerfano(valor)} />
-            ))}
+            {antiguos.map(([id, valor]) =>
+              valor.t === "mapa" ? (
+                // Un dibujo se entiende mejor viéndolo que contado.
+                <div key={id} className="sm:col-span-2">
+                  <dt className={ETIQUETA}>{id}</dt>
+                  <dd>
+                    <MapaImagen imagen={valor.imagen} trazos={valor.trazos} />
+                  </dd>
+                </div>
+              ) : (
+                <Dato key={id} label={id} value={textoHuerfano(valor)} />
+              ),
+            )}
           </dl>
         </Card>
       )}

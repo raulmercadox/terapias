@@ -135,6 +135,7 @@ model Centro {
   configuracion  Configuracion?
   plantillas     PlantillaFicha[]
   especialidades Especialidad[]
+  imagenesFicha  ImagenFicha[]
 }
 
 // Cómo se calcula el plazo para pagar un paquete (periodo de gracia).
@@ -183,6 +184,22 @@ model PlantillaFicha {
   centro Centro @relation(fields: [centroId], references: [id], onDelete: Cascade)
 
   @@unique([centroId, tipo])
+}
+
+// Imagen de fondo de un campo "marcas sobre imagen" subida por el centro (un
+// esquema de la boca, una escala de caritas…). Inmutable: cambiar la imagen de
+// un campo sube otra fila, así las marcas ya registradas siguen viéndose sobre
+// la imagen con la que se dibujaron. Las de fábrica viven en public/fichas.
+model ImagenFicha {
+  id        String   @id @default(cuid())
+  centroId  String
+  tipo      String // image/png | image/jpeg | image/webp
+  datos     Bytes
+  createdAt DateTime @default(now())
+
+  centro Centro @relation(fields: [centroId], references: [id], onDelete: Cascade)
+
+  @@index([centroId])
 }
 
 model Sede {

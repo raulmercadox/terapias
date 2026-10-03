@@ -8,6 +8,8 @@
 // Avance dejó de estar escrita en el código: ahora cada centro tiene su propia
 // plantilla, para que el sistema sirva tanto a terapia psicológica como física.
 
+import type { Leyenda, Trazo } from "./mapa";
+
 export const TIPOS_FICHA = ["HISTORIA", "EVALUACION", "INFORME"] as const;
 export type TipoFicha = (typeof TIPOS_FICHA)[number];
 
@@ -74,6 +76,20 @@ export type Campo =
       /** Si falta, hereda `conObservacion` de la sección. */
       conObservacion?: boolean;
       items: { id: string; label: string }[];
+    }
+  /**
+   * Marcas a mano alzada sobre una imagen: la zona del dolor en un dibujo del
+   * cuerpo, un mapa corporal de emociones… (ver mapa.ts).
+   */
+  | {
+      tipo: "mapa";
+      id: string;
+      label: string;
+      /** Imagen de fábrica ("base:cuerpo") o subida por el centro (id). */
+      imagenId: string;
+      /** Qué significa cada color: [{ color: "#dc2626", label: "Dolor" }]. */
+      leyenda: Leyenda;
+      ayuda?: string;
     };
 
 export type TipoCampo = Campo["tipo"];
@@ -142,7 +158,9 @@ export type ValorCampo =
   | { t: "casilla"; v: boolean }
   | { t: "opciones"; v: string[] }
   | { t: "tabla"; filas: Record<string, string>[] }
-  | { t: "checklist"; items: Record<string, { valor?: string; obs?: string }> };
+  | { t: "checklist"; items: Record<string, { valor?: string; obs?: string }> }
+  /** `imagen`: sobre cuál se dibujó (puede no ser la vigente del campo). */
+  | { t: "mapa"; imagen: string; trazos: Trazo[] };
 
 /** Lo registrado en una ficha: { [campoId]: ValorCampo }. */
 export type ValoresFicha = Record<string, ValorCampo>;

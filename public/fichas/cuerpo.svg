@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 530" width="440" height="530" font-family="Arial, Helvetica, sans-serif">
+  <!--
+    Silueta de fábrica para el campo "marcas sobre imagen": frente y espalda.
+    Cada figura se dibuja en dos capas con las mismas formas: abajo un poco
+    más gruesas en el color del contorno y encima en el color del relleno.
+    Así solo se ve el contorno exterior de la unión, sin líneas internas.
+    El cuerpo son formas rellenas; brazos y piernas son líneas gruesas.
+  -->
+  <defs>
+    <g id="cuerpo">
+      <ellipse cx="100" cy="42" rx="25" ry="31"/>
+      <rect x="89" y="66" width="22" height="24" rx="6"/>
+      <path d="M58 96 Q100 82 142 96 L148 128 L136 196 Q140 226 142 258 L58 258 Q60 226 64 196 L52 128 Z"/>
+      <ellipse cx="32" cy="286" rx="11" ry="17"/>
+      <ellipse cx="168" cy="286" rx="11" ry="17"/>
+      <path d="M68 456 Q58 482 70 488 L92 488 Q96 472 92 456 Z"/>
+      <path d="M132 456 Q142 482 130 488 L108 488 Q104 472 108 456 Z"/>
+    </g>
+    <g id="miembros" fill="none">
+      <polyline points="58,104 44,192 34,272"/>
+      <polyline points="142,104 156,192 166,272"/>
+      <polyline points="81,246 78,366 81,460"/>
+      <polyline points="119,246 122,366 119,460"/>
+    </g>
+    <g id="figura">
+      <g fill="#94a3b8" stroke="#94a3b8" stroke-width="5" stroke-linejoin="round">
+        <use href="#cuerpo"/>
+      </g>
+      <g stroke="#94a3b8" stroke-width="27" stroke-linecap="round" stroke-linejoin="round">
+        <use href="#miembros"/>
+      </g>
+      <g fill="#f8fafc">
+        <use href="#cuerpo"/>
+      </g>
+      <g stroke="#f8fafc" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+        <use href="#miembros"/>
+      </g>
+    </g>
+  </defs>
+
+  <rect width="440" height="530" fill="#ffffff"/>
+
+  <!-- Frente: la derecha del paciente queda a la izquierda de quien mira. -->
+  <g transform="translate(10 14)">
+    <use href="#figura"/>
+    <circle cx="100" cy="196" r="2" fill="#cbd5e1"/>
+  </g>
+  <text x="110" y="522" text-anchor="middle" font-size="15" font-weight="bold" fill="#475569">FRENTE</text>
+  <text x="18" y="40" font-size="13" fill="#64748b">Der.</text>
+  <text x="172" y="40" font-size="13" fill="#64748b">Izq.</text>
+
+  <!-- Espalda: la izquierda del paciente queda a la izquierda de quien mira. -->
+  <g transform="translate(230 14)">
+    <use href="#figura"/>
+    <path d="M100 92 L100 250" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="3 5" fill="none"/>
+    <path d="M78 116 Q90 140 84 168 M122 116 Q110 140 116 168" stroke="#e2e8f0" stroke-width="1.5" fill="none"/>
+  </g>
+  <text x="330" y="522" text-anchor="middle" font-size="15" font-weight="bold" fill="#475569">ESPALDA</text>
+  <text x="238" y="40" font-size="13" fill="#64748b">Izq.</text>
+  <text x="392" y="40" font-size="13" fill="#64748b">Der.</text>
+
+  <line x1="220" y1="20" x2="220" y2="500" stroke="#e2e8f0" stroke-width="1"/>
+</svg>

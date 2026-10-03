@@ -6,12 +6,22 @@ import { Button, ButtonLink, Card, Input, Select } from "@/components/ui";
 import {
   guardarPlantilla,
   restaurarPlantillaBase,
+  subirImagenFicha,
   type FormState,
 } from "../../actions";
 import { NOMBRES, PREFIJO_NUEVO, type TipoNuevo } from "@/lib/fichas/editor";
 import { BASES, type BaseId } from "@/lib/fichas/base";
 import { tituloSeccion } from "@/lib/fichas/numeracion";
 import type { Campo, Grupo, Plantilla, TipoFicha } from "@/lib/fichas/tipos";
+import {
+  IMAGEN_POR_DEFECTO,
+  IMAGEN_TIPOS,
+  IMAGENES_BASE,
+  esImagenBase,
+  urlImagen,
+  type Leyenda,
+} from "@/lib/fichas/mapa";
+import { LeyendaMapa } from "@/components/ficha/mapa-vista";
 
 const TIPO_CAMPO_LABEL: Record<Campo["tipo"], string> = {
   texto: "Texto corto",
@@ -20,6 +30,7 @@ const TIPO_CAMPO_LABEL: Record<Campo["tipo"], string> = {
   opciones: "Opciones",
   tabla: "Tabla",
   checklist: "Lista evaluable",
+  mapa: "Marcas sobre imagen",
 };
 
 /* ── Modelo del formulario ────────────────────────────── */
@@ -37,6 +48,9 @@ type CampoUI = {
   nuevo: boolean;
   multiple: boolean;
   items: Item[];
+  /** Solo mapas: imagen de fondo y qué significa cada color. */
+  imagen: string;
+  leyenda: Leyenda;
 };
 
 type GrupoUI = {
@@ -71,6 +85,8 @@ function modeloDe(plantilla: Plantilla): SeccionUI[] {
         nuevo: false,
         multiple: false,
         items: c.tipo === "checklist" ? c.items.map((i) => ({ ...i, k: i.id })) : [],
+        imagen: c.tipo === "mapa" ? c.imagenId : "",
+        leyenda: c.tipo === "mapa" ? c.leyenda : [],
       })),
     })),
   }));
@@ -188,6 +204,8 @@ function FilaCampo({
   onQuitar,
   onCambiar,
   nuevaClave,
+  imagenes,
+  onSubida,
 }: {
   campo: CampoUI;
   grupoClave: string;
@@ -199,10 +217,15 @@ function FilaCampo({
   onQuitar: () => void;
   onCambiar: (cambio: Partial<CampoUI>) => void;
   nuevaClave: () => string;
+  /** Imágenes subidas por el centro que se pueden elegir. */
+  imagenes: string[];
+  onSubida: (id: string) => void;
 }) {
   const { multiple } = campo;
   const esLista = campo.tipo === "checklist";
-  const opcionesNuevas = campo.nuevo && campo.tipo === "opciones";
+  const esMapa = campo.tipo === "mapa";
+  // La leyenda de un mapa nuevo viaja en la misma entrada que las opciones.
+  const opcionesNuevas = campo.nuevo && (campo.tipo === "opciones" || esMapa);
   const escalaNueva = campo.nuevo && esLista && pideEscala;
 
   return (
@@ -217,6 +240,7 @@ function FilaCampo({
       <input type="hidden" name={NOMBRES.campoMultiple} value={multiple ? "1" : ""} />
       {!opcionesNuevas && <input type="hidden" name={NOMBRES.campoOpciones} value="" />}
       {!escalaNueva && <input type="hidden" name={NOMBRES.campoEscala} value="" />}
+      <input type="hidden" name={NOMBRES.campoImagen} value={esMapa ? campo.imagen : ""} />
 
       <div className="flex items-center gap-2">
         <Input
@@ -247,7 +271,38 @@ function FilaCampo({
         </button>
       </div>
 
-      {opcionesNuevas && (
+      {esMapa && (
+        <ImagenDelMapa
+          imagen={campo.imagen}
+          imagenes={imagenes}
+          onElegir={(imagen) => onCambiar({ imagen })}
+          onSubida={(id) => {
+            onSubida(id);
+            onCambiar({ imagen: id });
+          }}
+        />
+      )}
+
+      {esMapa && !campo.nuevo && (
+        <div className="mt-2">
+          <LeyendaMapa leyenda={campo.leyenda} />
+        </div>
+      )}
+
+      {esMapa && campo.nuevo && (
+        <label className="mt-2 block text-sm text-slate-600">
+          Qué se marca, uno por línea (cada uno tendrá un color)
+          <textarea
+            name={NOMBRES.campoOpciones}
+            rows={2}
+            placeholder={"Dolor\nHormigueo o adormecimiento"}
+            aria-label="Leyenda de colores, una por línea"
+            className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </label>
+      )}
+
+      {opcionesNuevas && !esMapa && (
         <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
           <textarea
             name={NOMBRES.campoOpciones}
@@ -296,6 +351,82 @@ function FilaCampo({
           nuevaClave={nuevaClave}
         />
       )}
+    </div>
+  );
+}
+
+/** Imagen de fondo de un mapa: una de fábrica, una ya subida o subir otra. */
+function ImagenDelMapa({
+  imagen,
+  imagenes,
+  onElegir,
+  onSubida,
+}: {
+  imagen: string;
+  imagenes: string[];
+  onElegir: (id: string) => void;
+  onSubida: (id: string) => void;
+}) {
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function subir(archivo: File | undefined) {
+    if (!archivo) return;
+    setSubiendo(true);
+    setError(null);
+    const fd = new FormData();
+    fd.append("imagen", archivo);
+    const r = await subirImagenFicha(fd);
+    setSubiendo(false);
+    if ("error" in r) setError(r.error);
+    else onSubida(r.id);
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-start gap-3">
+      {/* eslint-disable-next-line @next/next/no-img-element -- vista previa de imagen privada */}
+      <img
+        src={urlImagen(imagen)}
+        alt="Imagen de fondo"
+        className="h-24 w-auto rounded border border-slate-200 bg-white"
+      />
+      <div className="space-y-2 text-sm text-slate-600">
+        <label className="flex items-center gap-2">
+          Imagen
+          <div className="w-60">
+            <Select value={imagen} onChange={(e) => onElegir(e.target.value)} className="py-1.5">
+              {Object.entries(IMAGENES_BASE).map(([id, b]) => (
+                <option key={id} value={id}>
+                  {b.label}
+                </option>
+              ))}
+              {imagenes.map((id, k) => (
+                <option key={id} value={id}>
+                  Imagen subida {k + 1}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </label>
+        <label className="block">
+          <span className="text-xs text-slate-500">
+            {subiendo ? "Subiendo…" : "o sube otra (PNG, JPG o WebP, hasta 1 MB):"}
+          </span>
+          {/* Sin `name`: el archivo se sube aparte y en el formulario solo viaja su id. */}
+          <input
+            type="file"
+            accept={IMAGEN_TIPOS.join(",")}
+            disabled={subiendo}
+            onChange={(e) => subir(e.target.files?.[0])}
+            className="mt-1 block text-xs"
+          />
+        </label>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <p className="text-xs text-slate-400">
+          Cambiar la imagen no mueve lo ya marcado: cada ficha conserva la imagen sobre la
+          que se dibujó.
+        </p>
+      </div>
     </div>
   );
 }
@@ -351,6 +482,17 @@ export function PlantillaForm({
   } = useFormReintento<FormState>(guardarPlantilla, undefined);
 
   const [secciones, setSecciones] = useState(() => modeloDe(plantilla));
+  // Imágenes subidas que se pueden elegir: las que ya usa la plantilla y las
+  // que se suban en esta edición.
+  const [subidas, setSubidas] = useState<string[]>(() => [
+    ...new Set(
+      plantilla.secciones.flatMap((s) =>
+        s.grupos.flatMap((g) =>
+          g.campos.flatMap((c) => (c.tipo === "mapa" && !esImagenBase(c.imagenId) ? [c.imagenId] : [])),
+        ),
+      ),
+    ),
+  ]);
   const contador = useRef(0);
   const clave = (letra: string) => `${PREFIJO_NUEVO}${letra}${++contador.current}`;
 
@@ -360,7 +502,14 @@ export function PlantillaForm({
   const tiposNuevos: TipoNuevo[] =
     tipo === "INFORME"
       ? ["checklist"]
-      : ["texto", "parrafo", "casilla", "opciones", ...(hayEscalas ? (["checklist"] as const) : [])];
+      : [
+          "texto",
+          "parrafo",
+          "casilla",
+          "opciones",
+          ...(hayEscalas ? (["checklist"] as const) : []),
+          "mapa",
+        ];
   // Las secciones nuevas de un informe toman la escala de la plantilla.
   const seccionesAbiertas = plantilla.secciones.some((s) => s.itemsAbiertos);
 
@@ -473,6 +622,8 @@ export function PlantillaForm({
                             }))
                           }
                           nuevaClave={() => clave("i")}
+                          imagenes={subidas}
+                          onSubida={(id) => setSubidas((prev) => [...prev, id])}
                         />
                       ))}
                       {grupo.campos.length === 0 && (
@@ -497,6 +648,8 @@ export function PlantillaForm({
                               multiple: false,
                               // Una lista nueva arranca con una fila para su primer ítem.
                               items: t === "checklist" ? [{ id: "", label: "", k: clave("i") }] : [],
+                              imagen: t === "mapa" ? IMAGEN_POR_DEFECTO : "",
+                              leyenda: [],
                             },
                           ],
                         }))

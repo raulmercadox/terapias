@@ -8,6 +8,7 @@
 
 import { camposDe, conObservacion, escalaDe, grupoVisible } from "./plantilla";
 import type { Campo, Plantilla, ValorCampo, ValoresFicha } from "./tipos";
+import { esImagenValida, normalizarTrazos } from "./mapa";
 
 const esObjeto = (v: unknown): v is Record<string, unknown> =>
   v != null && typeof v === "object" && !Array.isArray(v);
@@ -67,6 +68,12 @@ function valorHuerfano(v: unknown): ValorCampo | null {
         if (entrada.valor || entrada.obs) items[id] = entrada;
       }
       return { t: "checklist", items };
+    }
+    case "mapa": {
+      const trazos = normalizarTrazos(v.trazos);
+      return esImagenValida(v.imagen) && trazos.length > 0
+        ? { t: "mapa", imagen: v.imagen, trazos }
+        : null;
     }
     default:
       return null;
@@ -138,6 +145,23 @@ function valorDeCampo(
         if (entrada.valor || entrada.obs) items[id] = entrada;
       }
       return Object.keys(items).length > 0 ? { t: "checklist", items } : null;
+    }
+    case "mapa": {
+      // Llega del formulario como texto Json, o ya parseado al releer la ficha.
+      let crudo: unknown = bruto;
+      if (typeof crudo === "string") {
+        try {
+          crudo = JSON.parse(crudo);
+        } catch {
+          return null;
+        }
+      }
+      if (!esObjeto(crudo)) return null;
+      const trazos = normalizarTrazos(crudo.trazos);
+      if (trazos.length === 0) return null;
+      // Se conserva la imagen sobre la que se dibujó; si no viene, la del campo.
+      const imagen = esImagenValida(crudo.imagen) ? crudo.imagen : campo.imagenId;
+      return { t: "mapa", imagen, trazos };
     }
   }
 }

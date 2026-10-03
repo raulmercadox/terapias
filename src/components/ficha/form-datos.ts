@@ -72,6 +72,11 @@ export function parseValores(formData: FormData, plantilla: Plantilla): ValoresF
         crudo[campo.id] = items;
         break;
       }
+
+      case "mapa":
+        // El componente de dibujo manda los trazos como texto Json.
+        crudo[campo.id] = formData.get(nombreCampo(campo.id));
+        break;
     }
   }
 

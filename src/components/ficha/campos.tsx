@@ -5,6 +5,7 @@ import { Button, Field, Input, Textarea } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Campo, Escala, ValorCampo } from "@/lib/fichas/tipos";
 import { nombreCampo, nombreColumna, nombreItem, nombreObs } from "./form-datos";
+import { MapaDibujo } from "./mapa-dibujo";
 
 /* ── Helpers de lectura del valor guardado ─────────────── */
 
@@ -262,6 +263,19 @@ export function CampoFicha({
             conObservacion={conObservacion}
           />
         </div>
+      );
+
+    case "mapa":
+      return (
+        <Field label={campo.label} className="sm:col-span-2">
+          {campo.ayuda && <p className="mb-2 text-xs text-slate-400">{campo.ayuda}</p>}
+          <MapaDibujo
+            nombre={nombreCampo(campo.id)}
+            imagenCampo={campo.imagenId}
+            leyenda={campo.leyenda}
+            valor={valor?.t === "mapa" ? valor : undefined}
+          />
+        </Field>
       );
   }
 }

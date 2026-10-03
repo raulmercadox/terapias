@@ -12,6 +12,7 @@ import { obtenerPlantilla } from "@/lib/plantillas";
 import {
   aplicarEdicion,
   dependenciasRotas,
+  imagenesSubidas,
   parseEdicion,
   validarEdicion,
 } from "@/lib/fichas/editor";
@@ -19,6 +20,7 @@ import { idsDuplicados } from "@/lib/fichas/plantilla";
 import { esBaseValida, plantillaBase } from "@/lib/fichas/base";
 import { TIPOS_FICHA, type TipoFicha } from "@/lib/fichas/tipos";
 import { LOGO_MAX_BYTES, LOGO_TIPOS } from "@/lib/logo";
+import { IMAGEN_MAX_BYTES, IMAGEN_TIPOS } from "@/lib/fichas/mapa";
 
 /* ── Tipo de estado para useActionState ────────────────── */
 
@@ -767,6 +769,14 @@ export async function guardarPlantilla(
   const rota = dependenciasRotas(actual.plantilla, editada);
   if (rota) return { error: rota };
 
+  const subidas = imagenesSubidas(editada);
+  if (subidas.length > 0) {
+    const propias = await prisma.imagenFicha.count({
+      where: { id: { in: subidas }, centroId },
+    });
+    if (propias !== subidas.length) return { error: "Una de las imágenes no existe." };
+  }
+
   const repetidos = idsDuplicados(editada);
   if (repetidos.length > 0) {
     return { error: `Hay identificadores repetidos: ${repetidos.join(", ")}.` };
@@ -795,6 +805,34 @@ export async function guardarPlantilla(
 
   revalidatePath("/configuracion/fichas");
   redirect(`/configuracion/fichas/${tipo}?ok=1`);
+}
+
+/**
+ * Sube la imagen de fondo de un campo "marcas sobre imagen". No es una acción
+ * de formulario: el editor la llama al elegir el archivo y usa el id devuelto
+ * en el campo; la plantilla se guarda después, con el resto de la edición.
+ */
+export async function subirImagenFicha(
+  formData: FormData,
+): Promise<{ id: string } | { error: string }> {
+  const { centroId } = await requireAdmin();
+
+  const archivo = formData.get("imagen");
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { error: "Elige una imagen." };
+  }
+  if (!(IMAGEN_TIPOS as readonly string[]).includes(archivo.type)) {
+    return { error: "Formato no admitido. Usa PNG, JPG o WebP." };
+  }
+  if (archivo.size > IMAGEN_MAX_BYTES) {
+    return { error: "La imagen no puede superar 1 MB." };
+  }
+
+  const imagen = await prisma.imagenFicha.create({
+    data: { centroId, tipo: archivo.type, datos: Buffer.from(await archivo.arrayBuffer()) },
+    select: { id: true },
+  });
+  return { id: imagen.id };
 }
 
 /** Vuelve a la plantilla prearmada del rubro elegido, descartando lo editado. */

@@ -17,10 +17,11 @@
 //     registrado: la ficha lo muestra como dato antiguo (ver valores.ts).
 
 import { camposDe, normalizarPlantilla } from "./plantilla";
+import { esImagenBase, esImagenValida, leyendaDeTexto } from "./mapa";
 import type { Campo, Grupo, Plantilla, Seccion } from "./tipos";
 
 /** Tipos que se pueden crear desde el editor. */
-export const TIPOS_NUEVOS = ["texto", "parrafo", "casilla", "opciones", "checklist"] as const;
+export const TIPOS_NUEVOS = ["texto", "parrafo", "casilla", "opciones", "checklist", "mapa"] as const;
 export type TipoNuevo = (typeof TIPOS_NUEVOS)[number];
 
 /**
@@ -37,11 +38,13 @@ export type CampoEstructura = {
   grupo: string;
   /** Solo campos nuevos. */
   tipo: string;
-  /** Solo opciones nuevas: una por línea. */
+  /** Opciones nuevas, o la leyenda de un mapa nuevo: una por línea. */
   opciones: string;
   multiple: boolean;
   /** Solo listas nuevas: escala elegida (si la sección no trae una). */
   escala: string;
+  /** Solo mapas: imagen de fondo (nueva o cambiada). */
+  imagen: string;
 };
 
 export type Estructura = {
@@ -81,6 +84,7 @@ export const NOMBRES = {
   campoOpciones: "campo_opciones",
   campoMultiple: "campo_multiple",
   campoEscala: "campo_escala",
+  campoImagen: "campo_imagen",
   itemCampo: "item_campo",
   itemId: "item_id",
   itemLabel: "item_label",
@@ -137,6 +141,7 @@ export function parseEdicion(formData: FormData): Edicion {
   const campoOpciones = formData.getAll(NOMBRES.campoOpciones);
   const campoMultiples = formData.getAll(NOMBRES.campoMultiple);
   const campoEscalas = formData.getAll(NOMBRES.campoEscala);
+  const campoImagenes = formData.getAll(NOMBRES.campoImagen);
 
   const estructura: Estructura = {
     secciones: secIds.flatMap((id, i) => {
@@ -161,6 +166,7 @@ export function parseEdicion(formData: FormData): Edicion {
           opciones: String(campoOpciones[i] ?? ""),
           multiple: texto(campoMultiples[i]) === "1",
           escala: texto(campoEscalas[i]),
+          imagen: texto(campoImagenes[i]),
         },
       ];
     }),
@@ -227,6 +233,9 @@ export function validarEdicion(plantilla: Plantilla, edicion: Edicion): string |
     if (!c.label && c.tipo !== "checklist") return "Escribe el texto de cada campo nuevo.";
     if (c.tipo === "opciones" && opcionesDeTexto(c.opciones).length < 2) {
       return `El campo «${c.label}» necesita al menos dos opciones, una por línea.`;
+    }
+    if (c.tipo === "mapa" && !esImagenValida(c.imagen)) {
+      return `Elige la imagen del campo «${c.label}».`;
     }
     if (c.tipo === "checklist") {
       const nombre = c.label ? `«${c.label}»` : "nueva";
@@ -408,7 +417,13 @@ function reestructurar(
 
     const previo = campoPrevio.get(c.clave);
     if (previo) {
-      grupo.campos.push(editarCampo(previo));
+      const editado = editarCampo(previo);
+      // De un mapa se puede cambiar la imagen: lo ya dibujado guarda la suya.
+      grupo.campos.push(
+        editado.tipo === "mapa" && esImagenValida(c.imagen)
+          ? { ...editado, imagenId: c.imagen }
+          : editado,
+      );
       continue;
     }
     if (!esNuevo(c.clave)) continue;
@@ -429,6 +444,15 @@ function reestructurar(
           opciones: opcionesDeTexto(c.opciones),
         });
         break;
+      case "mapa":
+        grupo.campos.push({
+          tipo: "mapa",
+          id,
+          label: c.label,
+          imagenId: c.imagen,
+          leyenda: leyendaDeTexto(c.opciones),
+        });
+        break;
       case "checklist":
         grupo.campos.push({
           tipo: "checklist",
@@ -443,4 +467,18 @@ function reestructurar(
   }
 
   return [...secciones.values()];
+}
+
+/**
+ * Imágenes subidas (no de fábrica) que usa una plantilla. El servidor verifica
+ * que sean del centro antes de guardar: el id llega desde el formulario.
+ */
+export function imagenesSubidas(plantilla: Plantilla): string[] {
+  return [
+    ...new Set(
+      camposDe(plantilla).flatMap((c) =>
+        c.tipo === "mapa" && !esImagenBase(c.imagenId) ? [c.imagenId] : [],
+      ),
+    ),
+  ];
 }
