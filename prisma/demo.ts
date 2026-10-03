@@ -10,6 +10,19 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import { sembrarFichas } from "./demo-fichas";
+import { sembrarFisioVida } from "./demo-fisio";
+import {
+  claveFecha,
+  creadorDePagos,
+  dia,
+  diasEntre,
+  generarSesiones,
+  hoy,
+  mediodia,
+  sumarMinutos,
+  telefono,
+  type Franja,
+} from "./demo-util";
 
 process.loadEnvFile?.();
 
@@ -23,70 +36,7 @@ const prisma = new PrismaClient({
 
 const CLAVE_DEMO = "demo123";
 
-/* ── Fechas ──────────────────────────────────────────────── */
-
-/** Hoy a medianoche local (convención de los campos "solo fecha"). */
-function hoy(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/** Medianoche local de hoy + n días. */
-function dia(n: number): Date {
-  const d = hoy();
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
-/** Mediodía local: los pagos se guardan así (evita desfases de zona). */
-function mediodia(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
-
-function claveFecha(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function diasEntre(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
-}
-
-function sumarMinutos(hhmm: string, mins: number): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const t = h * 60 + m + mins;
-  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
-}
-
-/* ── Sesiones ────────────────────────────────────────────── */
-
-type Franja = { dia: number; hora: string }; // dia: getDay() 0=Dom..6=Sáb
-
-/** Fechas de las N sesiones desde `inicio`, repitiendo el horario semanal. */
-function generarSesiones(inicio: Date, total: number, horario: Franja[], duracionMin: number) {
-  const porDia = new Map(horario.map((h) => [h.dia, h.hora]));
-  const out: { fecha: Date; horaInicio: string; horaFin: string }[] = [];
-  const cursor = new Date(inicio);
-  let guardia = 0;
-  while (out.length < total && guardia < total * 14 + 60) {
-    const hora = porDia.get(cursor.getDay());
-    if (hora) {
-      out.push({
-        fecha: new Date(cursor),
-        horaInicio: hora,
-        horaFin: sumarMinutos(hora, duracionMin),
-      });
-    }
-    cursor.setDate(cursor.getDate() + 1);
-    guardia++;
-  }
-  return out;
-}
+const crearPago = creadorDePagos(prisma);
 
 /** Misma regla que src/app/(app)/pagos/cobranza.ts, para autocomprobar el guion. */
 function estadoCobroEsperado(
@@ -112,11 +62,6 @@ const APODERADOS = [
   { nombres: "Elena", apellidos: "Soto Vargas", vinculo: "MADRE" as const },
   { nombres: "Miguel", apellidos: "Lara Bustos", vinculo: "PADRE" as const },
 ];
-
-/** Teléfonos ficticios (9 dígitos, prefijo 9) para el botón de WhatsApp. */
-function telefono(i: number): string {
-  return `9${String(11223344 + i * 137).padStart(8, "0")}`;
-}
 
 async function main() {
   console.log("Sembrando datos de demostración…\n");
@@ -857,12 +802,15 @@ async function main() {
 
   /* ── Fichas clínicas y centro de terapia física ─────────── */
   const fichas = await sembrarFichas(prisma);
+  const fisio = await sembrarFisioVida(prisma, CLAVE_DEMO);
 
   console.log("Fichas clínicas sembradas:");
   console.log(fichas.join("\n"));
   console.log();
   console.log("Casos de cobranza sembrados:");
   console.log(resumen.join("\n"));
+  console.log("\nCentro FisioVida (terapia física):");
+  console.log(fisio.join("\n"));
   console.log("\nSede Principal:", JSON.stringify(await cuenta(principal.id)));
   console.log("Sede SJL      :", JSON.stringify(await cuenta(sjl.id)));
   console.log(
@@ -871,57 +819,11 @@ async function main() {
       `  Empresa 'arcoiris' · coordinadora / ${CLAVE_DEMO}   (2 sedes, sin configuración)\n` +
       `  Empresa 'arcoiris' · recepcion / ${CLAVE_DEMO}      (solo agenda y sesiones)\n` +
       `  Empresa 'fisiovida' · admin / ${CLAVE_DEMO}         (TERAPIA FÍSICA: otras fichas)\n` +
+      `  Empresa 'fisiovida' · coordinadora / ${CLAVE_DEMO}  (2 sedes: Principal y Surco)\n` +
+      `  Empresa 'fisiovida' · recepcion / ${CLAVE_DEMO}     (solo sede Principal)\n` +
       `  Empresa 'demo'     · admin / ${CLAVE_DEMO}          (otro centro: datos aislados)\n` +
       "  Empresa 'plataforma' · superadmin / admin123      (alta de centros)",
   );
-}
-
-/* ── Pago con correlativo por sede, como lo hace la app ───── */
-
-const correlativos = new Map<string, number>();
-
-function prefijoSede(nombre: string): string {
-  const limpio = nombre
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-zA-Z]/g, "")
-    .toUpperCase();
-  return (limpio || "SED").slice(0, 3).padEnd(3, "X");
-}
-
-async function crearPago(p: {
-  sedeId: string;
-  sedeNombre: string;
-  pacienteId: string;
-  paqueteId: string | null;
-  concepto: "MATRICULA" | "MATERIALES" | "MENSUALIDAD" | "PAQUETE_SESIONES" | "EVALUACION" | "OTRO";
-  monto: number;
-  saldo: number;
-  metodoPago: "EFECTIVO" | "YAPE" | "PLIN" | "TRANSFERENCIA" | "TARJETA";
-  fecha: Date;
-  descripcion?: string;
-}) {
-  const prefijo = prefijoSede(p.sedeNombre);
-  const clave = `${p.sedeId}|${prefijo}`;
-  const siguiente = (correlativos.get(clave) ?? 0) + 1;
-  correlativos.set(clave, siguiente);
-
-  await prisma.pago.create({
-    data: {
-      sedeId: p.sedeId,
-      pacienteId: p.pacienteId,
-      paqueteId: p.paqueteId,
-      numeroRecibo: `${prefijo}-${String(siguiente).padStart(6, "0")}`,
-      concepto: p.concepto,
-      descripcion: p.descripcion,
-      monto: p.monto,
-      saldo: p.saldo,
-      metodoPago: p.metodoPago,
-      referencia:
-        p.metodoPago === "TRANSFERENCIA" ? `Op. ${100000 + siguiente} — BCP` : null,
-      fechaPago: mediodia(p.fecha),
-    },
-  });
 }
 
 main()

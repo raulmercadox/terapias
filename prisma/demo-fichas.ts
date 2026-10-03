@@ -1,28 +1,24 @@
 // Siembra de fichas clínicas para las demos: las plantillas de cada centro y
-// algunas historias, evaluaciones e informes ya llenos.
-//
-// Incluye un segundo centro, de TERAPIA FÍSICA, cuyo único propósito es poder
-// mostrar en una demo que el mismo sistema sirve a los dos rubros: sus fichas
-// hablan de dolor, rangos articulares y marcha, no de lenguaje ni conducta.
+// algunas historias, evaluaciones e informes ya llenos. El centro de terapia
+// física (FisioVida) tiene su propio guion completo en demo-fisio.ts.
 
 import type { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
 import { PSICOLOGICA } from "../src/lib/fichas/base/psicologica";
 import { FISICA } from "../src/lib/fichas/base/fisica";
 import { TIPOS_FICHA } from "../src/lib/fichas/tipos";
 
 /** Valor de un campo tal como lo guarda la ficha (ver src/lib/fichas/tipos). */
-const txt = (v: string) => ({ t: "texto", v });
-const si = () => ({ t: "casilla", v: true });
-const ops = (...v: string[]) => ({ t: "opciones", v });
+export const txt = (v: string) => ({ t: "texto", v });
+export const si = () => ({ t: "casilla", v: true });
+export const ops = (...v: string[]) => ({ t: "opciones", v });
 const tabla = (...filas: Record<string, string>[]) => ({ t: "tabla", filas });
-const lista = (items: Record<string, { valor?: string; obs?: string }>) => ({
+export const lista = (items: Record<string, { valor?: string; obs?: string }>) => ({
   t: "checklist",
   items,
 });
 
 /** Deja las tres plantillas de un centro en su base, sin personalizar. */
-async function plantillasDe(
+export async function plantillasDe(
   prisma: PrismaClient,
   centroId: string,
   base: "psicologica" | "fisica",
@@ -200,217 +196,6 @@ export async function sembrarFichas(prisma: PrismaClient): Promise<string[]> {
     });
     salida.push(`  historia clínica de ${dos.nombres} ${dos.apellidoPaterno}`);
   }
-
-  /* ══ Centro físico (FisioVida) ══════════════════════════ */
-
-  // Se actualiza en vez de borrar y recrear: el centro cuelga de muchas tablas
-  // y Sede no tiene borrado en cascada, así que eliminarlo viola las claves
-  // foráneas en cuanto tiene datos. Se limpian solo sus datos operativos.
-  const hash = await bcrypt.hash("demo123", 10);
-  const marca = {
-    nombre: "Centro FisioVida",
-    subtitulo: "Rehabilitación y terapia física",
-  };
-  const fisio = await prisma.centro.upsert({
-    where: { codigo: "fisiovida" },
-    update: { ...marca, activo: true },
-    create: { codigo: "fisiovida", ...marca },
-  });
-
-  const sedeDatos = {
-    direccion: "Av. Javier Prado 2150, San Isidro",
-    telefono: "01 555 9080",
-    horaApertura: "08:00",
-    horaCierre: "19:00",
-  };
-  const sedeFisio = await prisma.sede.upsert({
-    where: { centroId_nombre: { centroId: fisio.id, nombre: "Principal" } },
-    update: sedeDatos,
-    create: { centroId: fisio.id, nombre: "Principal", ...sedeDatos },
-  });
-
-  await prisma.user.upsert({
-    where: { centroId_usuario: { centroId: fisio.id, usuario: "admin" } },
-    update: { passwordHash: hash, nombre: "Daniel Espinoza", rol: "ADMINISTRADOR", activo: true },
-    create: {
-      centroId: fisio.id,
-      nombre: "Daniel Espinoza",
-      usuario: "admin",
-      passwordHash: hash,
-      rol: "ADMINISTRADOR",
-    },
-  });
-
-  await prisma.configuracion.upsert({
-    where: { centroId: fisio.id },
-    update: { graciaTipo: "DIAS", graciaValor: 20, diasAvisoCobro: 5 },
-    create: { centroId: fisio.id, graciaTipo: "DIAS", graciaValor: 20, diasAvisoCobro: 5 },
-  });
-
-  await plantillasDe(prisma, fisio.id, "fisica");
-
-  // Datos operativos de la sede, en orden de dependencia.
-  await prisma.informeAvance.deleteMany({ where: { sedeId: sedeFisio.id } });
-  await prisma.evaluacion.deleteMany({ where: { sedeId: sedeFisio.id } });
-  await prisma.historiaClinica.deleteMany({ where: { sedeId: sedeFisio.id } });
-  await prisma.apoderado.deleteMany({ where: { paciente: { sedeId: sedeFisio.id } } });
-  await prisma.paciente.deleteMany({ where: { sedeId: sedeFisio.id } });
-  await prisma.terapeuta.deleteMany({ where: { sedeId: sedeFisio.id } });
-  await prisma.programaTerapia.deleteMany({ where: { sedeId: sedeFisio.id } });
-
-  for (const [nombres, apellidos, nombre] of [
-    ["Gabriela", "Ríos Mendoza", "Fisioterapia traumatológica"],
-    ["Álvaro", "Benavides León", "Terapia deportiva"],
-  ]) {
-    await prisma.terapeuta.create({
-      data: {
-        sedeId: sedeFisio.id,
-        nombres,
-        apellidos,
-        especialidades: {
-          create: [
-            {
-              especialidad: {
-                connectOrCreate: {
-                  where: { centroId_nombre: { centroId: fisio.id, nombre } },
-                  create: { centroId: fisio.id, nombre },
-                },
-              },
-            },
-          ],
-        },
-      },
-    });
-  }
-  await prisma.programaTerapia.createMany({
-    data: [
-      { sedeId: sedeFisio.id, nombre: "Rehabilitación traumatológica", duracionMin: 45 },
-      { sedeId: sedeFisio.id, nombre: "Terapia de columna", duracionMin: 45 },
-    ],
-  });
-
-  const ricardo = await prisma.paciente.create({
-    data: {
-      sedeId: sedeFisio.id,
-      nombres: "Ricardo",
-      apellidoPaterno: "Salas",
-      apellidoMaterno: "Ynga",
-      dni: "40123456",
-      fechaNacimiento: new Date(1979, 4, 22),
-      sexo: "M",
-      telefono: "987654321",
-      distrito: "San Isidro",
-      diagnostico: "Lumbalgia mecánica",
-      estado: "ACTIVO",
-    },
-  });
-  await prisma.paciente.create({
-    data: {
-      sedeId: sedeFisio.id,
-      nombres: "Elena",
-      apellidoPaterno: "Cárdenas",
-      apellidoMaterno: "Vilca",
-      dni: "41987654",
-      fechaNacimiento: new Date(1986, 10, 3),
-      sexo: "F",
-      telefono: "986112233",
-      distrito: "Lince",
-      diagnostico: "Síndrome de manguito rotador",
-      estado: "ACTIVO",
-    },
-  });
-
-  await prisma.historiaClinica.create({
-    data: {
-      sedeId: sedeFisio.id,
-      pacienteId: ricardo.id,
-      fecha: new Date(),
-      valores: {
-        ocupacion: txt("Contador"),
-        derivadoPor: txt("Dr. Peña — Traumatología"),
-        diagnosticoMedico: txt("Lumbalgia mecánica L4-L5"),
-        lateralidad: txt("Diestro"),
-        motivoConsulta: txt("Dolor lumbar que irradia a la pierna derecha al estar sentado."),
-        inicioSintomas: txt("Hace 4 meses"),
-        mecanismoLesion: txt("Progresivo, tras mudanza cargando peso."),
-        localizacionDolor: txt("Lumbar bajo con irradiación a cara posterior del muslo"),
-        tipoDolor: ops("PUNZANTE", "ELECTRICO"),
-        factoresAgravantes: txt("Permanecer sentado más de 30 minutos"),
-        factoresAlivio: txt("Caminar y aplicar calor local"),
-        dolorNocturno: si(),
-        antecedentesPatologicos: txt("Sin antecedentes relevantes."),
-        examenesImagen: txt("RM: protrusión discal L4-L5."),
-        actividadFisica: txt("Sedentario; caminatas los fines de semana."),
-        limitacionesAvd: txt("Dificultad para agacharse y atarse los zapatos."),
-      },
-    },
-  });
-  await prisma.evaluacion.create({
-    data: {
-      sedeId: sedeFisio.id,
-      pacienteId: ricardo.id,
-      fecha: new Date(),
-      plantillaVersion: 1,
-      estructura: FISICA.EVALUACION as object,
-      recomendaciones: "Iniciar programa de estabilización lumbar y reeducación postural.",
-      valores: {
-        posturaGeneral: txt("Hiperlordosis lumbar, anteversión pélvica."),
-        trofismo: txt("Conservado."),
-        chk_eva: lista({
-          eva_reposo: { valor: "3" },
-          eva_movimiento: { valor: "7", obs: "al flexionar el tronco" },
-          eva_nocturno: { valor: "5" },
-          eva_palpacion: { valor: "6" },
-        }),
-        chk_rango_inferior: lista({
-          rom_cadera_flex: { valor: "LIMITADO", obs: "por dolor" },
-          rom_rodilla: { valor: "COMPLETO" },
-          rom_tobillo: { valor: "COMPLETO" },
-        }),
-        chk_rango_columna: lista({
-          rom_lumbar: { valor: "LIMITADO", obs: "flexión 40°" },
-          rom_dorsal: { valor: "COMPLETO" },
-        }),
-        chk_fuerza: lista({
-          fza_core: { valor: "3", obs: "débil" },
-          fza_cuadriceps: { valor: "4" },
-          fza_isquiotibiales: { valor: "4" },
-        }),
-        chk_funcional: lista({
-          fun_sentarse: { valor: "SI" },
-          fun_agacharse: { valor: "NO", obs: "dolor al intentarlo" },
-          fun_escaleras: { valor: "SI" },
-        }),
-        patronMarcha: txt("Marcha antiálgica leve, disminución del braceo derecho."),
-        equilibrio: txt("Conservado."),
-        objetivosCorto: txt("Reducir el dolor a EVA 3 en movimiento."),
-        objetivosLargo: txt("Retomar la jornada laboral sin dolor."),
-        planTratamiento: txt("Terapia manual, ejercicio terapéutico y educación postural."),
-        frecuenciaSugerida: txt("3 veces por semana durante 6 semanas"),
-      },
-    },
-  });
-  await prisma.informeAvance.create({
-    data: {
-      sedeId: sedeFisio.id,
-      pacienteId: ricardo.id,
-      fecha: new Date(),
-      recomendaciones: "Mantener el programa domiciliario; reevaluar en 3 semanas.",
-      secciones: FISICA.INFORME.secciones.map((s) => ({
-        id: s.id,
-        titulo: s.titulo,
-        items: s.grupos
-          .flatMap((g) => g.campos)
-          .flatMap((c) => (c.tipo === "checklist" ? c.items : []))
-          .map((i) => ({
-            id: i.id,
-            label: i.label,
-            valor: { inf_dolor_reposo: "LE", inf_dolor_actividad: "EP", inf_rom_activo: "EP", inf_fuerza_segmento: "EP", inf_marcha: "LE", inf_avd: "EP", inf_asistencia: "LE" }[i.id] ?? null,
-          })),
-      })),
-    },
-  });
-  salida.push("  Centro FisioVida: 2 pacientes, historia, evaluación e informe de terapia física");
 
   return salida;
 }
