@@ -45,18 +45,21 @@ export default async function EditarPlantillaPage({
 
       <Card className="border-sky-200 bg-sky-50">
         <p className="text-sm text-sky-900">
-          Se pueden cambiar los títulos de las secciones, el texto de cada pregunta y
-          los ítems de las listas de evaluación. El tipo de cada campo, las escalas y
-          las tablas no se editan aquí: vienen de la plantilla base.
+          Se pueden agregar, quitar, reordenar y renombrar secciones y campos, y editar
+          los ítems de las listas de evaluación. El tipo de un campo existente, las
+          escalas y las columnas de las tablas no se editan aquí.
         </p>
         <p className="mt-2 text-xs text-sky-800">
-          Al renombrar un ítem se conserva su identificador, de modo que el progreso
-          histórico del paciente sigue siendo comparable.
+          Quitar un campo no borra lo ya registrado: las fichas lo muestran como dato
+          antiguo. Al renombrar un ítem se conserva su identificador, de modo que el
+          progreso histórico del paciente sigue siendo comparable.
         </p>
       </Card>
 
       <div className="max-w-4xl">
-        <PlantillaForm tipo={tipo} plantilla={plantilla} />
+        {/* key: tras guardar, el formulario se rearma desde la plantilla nueva
+            (los campos recién creados ya tienen id y dejan de ser "nuevos"). */}
+        <PlantillaForm key={version} tipo={tipo} plantilla={plantilla} />
       </div>
     </div>
   );

@@ -9,7 +9,12 @@ import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { USUARIO_MSG, USUARIO_RE } from "@/lib/formatos";
 import { obtenerPlantilla } from "@/lib/plantillas";
-import { aplicarEdicion, parseEdicion } from "@/lib/fichas/editor";
+import {
+  aplicarEdicion,
+  dependenciasRotas,
+  parseEdicion,
+  validarEdicion,
+} from "@/lib/fichas/editor";
 import { idsDuplicados } from "@/lib/fichas/plantilla";
 import { esBaseValida, plantillaBase } from "@/lib/fichas/base";
 import { TIPOS_FICHA, type TipoFicha } from "@/lib/fichas/tipos";
@@ -754,7 +759,13 @@ export async function guardarPlantilla(
   if (!tipo) return { error: "Tipo de ficha inválido." };
 
   const actual = await obtenerPlantilla(centroId, tipo);
-  const editada = aplicarEdicion(actual.plantilla, parseEdicion(formData));
+  const edicion = parseEdicion(formData);
+  const invalida = validarEdicion(actual.plantilla, edicion);
+  if (invalida) return { error: invalida };
+  const editada = aplicarEdicion(actual.plantilla, edicion);
+
+  const rota = dependenciasRotas(actual.plantilla, editada);
+  if (rota) return { error: rota };
 
   const repetidos = idsDuplicados(editada);
   if (repetidos.length > 0) {
