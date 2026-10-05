@@ -46,11 +46,12 @@ export default async function AgendaPage({
     terapeutaId?: string;
     vista?: string;
     estado?: string;
+    pacienteId?: string;
   }>;
 }) {
   const user = await requireUser();
   const sedeId = await requireActiveSede(user);
-  const { semana, terapeutaId, vista, estado } = await searchParams;
+  const { semana, terapeutaId, vista, estado, pacienteId } = await searchParams;
   const filtroEstado = parseFiltroEstado(estado);
 
   const lunes = lunesDeLaSemana(parseFechaISO(semana) ?? new Date());
@@ -209,7 +210,12 @@ export default async function AgendaPage({
         subtitle={`Semana del ${fecha(lunes)} al ${fecha(dias[6])}`}
         actions={
           !terapeuta ? (
-            <ButtonLink href="/citas/nueva">Nueva cita</ButtonLink>
+            // Desde la ficha del paciente (?pacienteId=) la cita nueva ya lo trae elegido.
+            <ButtonLink
+              href={`/citas/nueva${pacienteId ? `?pacienteId=${encodeURIComponent(pacienteId)}` : ""}`}
+            >
+              Nueva cita
+            </ButtonLink>
           ) : puede(user, "CITA_AL_VUELO") ? (
             <ButtonLink href="/citas/rapida">Registro rápido</ButtonLink>
           ) : undefined

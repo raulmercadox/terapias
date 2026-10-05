@@ -95,7 +95,6 @@ export async function sembrarFichas(prisma: PrismaClient): Promise<string[]> {
         fecha: new Date(),
         plantillaVersion: 1,
         estructura: PSICOLOGICA.EVALUACION as object,
-        programaRecomendado: "TERAPIAS",
         recomendaciones: "Terapia de lenguaje individual, 3 veces por semana.",
         valores: {
           lugarNacimiento: txt("Lima"),

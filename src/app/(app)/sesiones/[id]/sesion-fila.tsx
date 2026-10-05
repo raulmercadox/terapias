@@ -9,6 +9,7 @@ import {
   reprogramarSesion,
   type ActionState,
 } from "../actions";
+import { ajustarHoraFin } from "../hora-fin";
 
 const initial: ActionState = { ok: false };
 
@@ -30,11 +31,14 @@ type CitaVM = {
 export default function SesionFila({
   cita,
   terapeutas,
+  duracionMin,
   asistenciaColor,
   asistenciaLabel,
 }: {
   cita: CitaVM;
   terapeutas: Opcion[];
+  /** Duración de sesión de la terapia: al cambiar la hora de inicio se ajusta el fin. */
+  duracionMin?: number;
   asistenciaColor: "green" | "red" | "amber" | "sky" | "slate";
   asistenciaLabel: string;
 }) {
@@ -178,6 +182,7 @@ export default function SesionFila({
                     name="horaInicio"
                     required
                     defaultValue={cita.horaInicio}
+                    onChange={(e) => ajustarHoraFin(e.currentTarget.form, duracionMin)}
                   />
                 </Field>
                 <Field label="Hora fin" required>

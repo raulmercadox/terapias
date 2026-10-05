@@ -133,6 +133,21 @@ El script **no** aplica migraciones por defecto. Si detecta cambios en
 `prisma/`, regenera el cliente y avisa; para aplicarlas hay que pasar
 `--migrate` explícitamente (ejecuta `prisma migrate deploy`).
 
+Con `--migrate`, antes de migrar se vuelca la base de datos completa a
+`/opt/genius-backups/db-<timestamp>.dump` (se conservan los últimos 5). Si el
+volcado o la migración fallan, el script se detiene sin reiniciar el servicio.
+Para volver la BD al estado previo:
+
+```bash
+ssh root@2.25.162.59
+cd /opt/genius
+pg_restore --clean --if-exists -d "<DATABASE_URL sin ?schema=...>" /opt/genius-backups/db-<timestamp>.dump
+```
+
+Ensaya antes cada migración con datos reales: restaura un volcado de
+producción en la BD local de docker y corre `npx prisma migrate deploy` contra
+ella.
+
 ## Archivos de configuración
 
 Copia fiel de lo que corre en el VPS (montado el 2026-09-12). No se aplican

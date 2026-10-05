@@ -20,7 +20,13 @@ import {
   Select,
   Paginacion,
 } from "@/components/ui";
-import { nombreCompleto, edad } from "@/lib/utils";
+import { nombreCompleto, edad, cn } from "@/lib/utils";
+import {
+  WHERE_ES_PACIENTE,
+  WHERE_ES_POTENCIAL,
+  type TipoPaciente,
+} from "@/lib/tipo-paciente";
+import type { Prisma } from "@prisma/client";
 
 const POR_PAGINA = 20;
 
@@ -31,36 +37,53 @@ type FiltroEstado = (typeof ESTADOS)[number];
 export default async function PacientesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; estado?: string; pagina?: string }>;
+  searchParams: Promise<{ q?: string; estado?: string; pagina?: string; tipo?: string }>;
 }) {
   const user = await requireUser();
   if (!puedeVerClinica(user)) notFound();
   // El terapeuta ve solo los pacientes que atiende (o toda la sede con permiso).
   const terapeuta = esTerapeuta(user);
   const sedeId = await requireActiveSede(user);
-  const { q, estado: estadoParam, pagina: paginaParam } = await searchParams;
+  const {
+    q,
+    estado: estadoParam,
+    pagina: paginaParam,
+    tipo: tipoParam,
+  } = await searchParams;
+  // Pestaña: pacientes (ya en terapia) o potenciales (aún no empiezan).
+  const tipo: TipoPaciente = tipoParam === "potenciales" ? "potenciales" : "pacientes";
   const termino = (q ?? "").trim();
   const estado: FiltroEstado = ESTADOS.includes(estadoParam as FiltroEstado)
     ? (estadoParam as FiltroEstado)
     : "TODOS";
 
-  const where = {
-    sedeId,
-    ...whereMisPacientes(user),
-    ...(estado === "TODOS" ? {} : { estado }),
-    ...(termino
+  // Filtros comunes a ambas pestañas. Van en AND: la búsqueda usa `OR` y el
+  // filtro del terapeuta usa `citas`, y un spread se pisaría con ellos.
+  const filtros: Prisma.PacienteWhereInput[] = [
+    whereMisPacientes(user),
+    estado === "TODOS" ? {} : { estado },
+    termino
       ? {
           OR: [
-            { nombres: { contains: termino, mode: "insensitive" as const } },
-            { apellidoPaterno: { contains: termino, mode: "insensitive" as const } },
-            { apellidoMaterno: { contains: termino, mode: "insensitive" as const } },
-            { dni: { contains: termino, mode: "insensitive" as const } },
+            { nombres: { contains: termino, mode: "insensitive" } },
+            { apellidoPaterno: { contains: termino, mode: "insensitive" } },
+            { apellidoMaterno: { contains: termino, mode: "insensitive" } },
+            { dni: { contains: termino, mode: "insensitive" } },
           ],
         }
-      : {}),
-  };
+      : {},
+  ];
+  const whereDe = (t: TipoPaciente): Prisma.PacienteWhereInput => ({
+    sedeId,
+    AND: [...filtros, t === "pacientes" ? WHERE_ES_PACIENTE : WHERE_ES_POTENCIAL],
+  });
+  const where = whereDe(tipo);
 
-  const total = await prisma.paciente.count({ where });
+  const [totalPacientes, totalPotenciales] = await Promise.all([
+    prisma.paciente.count({ where: whereDe("pacientes") }),
+    prisma.paciente.count({ where: whereDe("potenciales") }),
+  ]);
+  const total = tipo === "pacientes" ? totalPacientes : totalPotenciales;
   const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
   const paginaPedida = Number.parseInt(paginaParam ?? "1", 10);
   const pagina = Number.isNaN(paginaPedida)
@@ -73,10 +96,10 @@ export default async function PacientesPage({
     skip: (pagina - 1) * POR_PAGINA,
     take: POR_PAGINA,
     include: {
-      // Programas de los paquetes ACTIVOS del paciente (puede tener varios).
+      // Terapias de los paquetes ACTIVOS del paciente (puede tener varios).
       paquetes: {
         where: { estado: "ACTIVO" },
-        select: { programa: { select: { nombre: true } } },
+        select: { terapias: { select: { terapia: { select: { nombre: true } } } } },
       },
     },
   });
@@ -97,7 +120,45 @@ export default async function PacientesPage({
         }
       />
 
+      <div className="flex gap-1 border-b border-slate-200" role="tablist">
+        {(
+          [
+            ["pacientes", "Pacientes", totalPacientes],
+            ["potenciales", "Potenciales", totalPotenciales],
+          ] as const
+        ).map(([valor, etiqueta, n]) => {
+          const params = new URLSearchParams({
+            ...(valor === "potenciales" ? { tipo: valor } : {}),
+            ...(termino ? { q: termino } : {}),
+            ...(estado === "TODOS" ? {} : { estado }),
+          }).toString();
+          return (
+            <Link
+              key={valor}
+              role="tab"
+              aria-selected={tipo === valor}
+              href={`/pacientes${params ? `?${params}` : ""}`}
+              className={cn(
+                "-mb-px border-b-2 px-4 py-2 text-sm font-medium",
+                tipo === valor
+                  ? "border-sky-600 text-sky-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700",
+              )}
+            >
+              {etiqueta} <span className="text-xs text-slate-400">({n})</span>
+            </Link>
+          );
+        })}
+      </div>
+      {tipo === "potenciales" && (
+        <p className="text-sm text-slate-500">
+          Evaluados o registrados que aún no tienen un paquete agendado ni han
+          asistido a una sesión.
+        </p>
+      )}
+
       <form method="get" className="flex flex-wrap gap-2">
+        {tipo === "potenciales" && <input type="hidden" name="tipo" value={tipo} />}
         <input
           type="search"
           name="q"
@@ -123,7 +184,11 @@ export default async function PacientesPage({
       {pacientes.length === 0 ? (
         <EmptyState
           message={
-            termino
+            tipo === "potenciales"
+              ? termino
+                ? `No se encontraron potenciales para "${termino}".`
+                : "No hay potenciales en esta sede."
+              : termino
               ? `No se encontraron pacientes para "${termino}"${
                   estado === "ACTIVO"
                     ? " entre los activos"
@@ -146,18 +211,18 @@ export default async function PacientesPage({
               <Th>Edad</Th>
               <Th>DNI</Th>
               <Th>Teléfono</Th>
-              <Th>Programa</Th>
+              {tipo === "pacientes" && <Th>Terapias</Th>}
               <Th>Estado</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {pacientes.map((p) => {
-              // Nombres únicos de los programas con paquete activo (los paquetes
-              // antiguos sin programa asignado no aportan nombre).
+              // Nombres únicos de las terapias con paquete activo (los paquetes
+              // antiguos sin terapia asignada no aportan nombre).
               const programas = [
                 ...new Set(
                   p.paquetes
-                    .map((pq) => pq.programa?.nombre)
+                    .flatMap((pq) => pq.terapias.map((l) => l.terapia?.nombre))
                     .filter((n): n is string => Boolean(n)),
                 ),
               ];
@@ -174,6 +239,7 @@ export default async function PacientesPage({
                 <Td>{edad(p.fechaNacimiento)}</Td>
                 <Td>{p.dni ?? "—"}</Td>
                 <Td>{p.telefono ?? "—"}</Td>
+                {tipo === "pacientes" && (
                 <Td>
                   {programas.length === 0 ? (
                     <span className="text-slate-400">—</span>
@@ -187,6 +253,7 @@ export default async function PacientesPage({
                     </div>
                   )}
                 </Td>
+                )}
                 <Td>
                   {p.estado === "ACTIVO" ? (
                     <Badge color="green">ACTIVO</Badge>
@@ -209,6 +276,7 @@ export default async function PacientesPage({
         params={{
           ...(termino ? { q: termino } : {}),
           ...(estado === "TODOS" ? {} : { estado }),
+          ...(tipo === "potenciales" ? { tipo } : {}),
         }}
       />
     </div>

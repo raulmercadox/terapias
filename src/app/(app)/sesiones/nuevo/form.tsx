@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useFormReintento } from "@/components/form-reintento";
 import { Field, Input, Select, Textarea, Button } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
+import { cn } from "@/lib/utils";
 import { crearPaquete, type ActionState } from "../actions";
 import {
   DIA_NOMBRE,
@@ -12,51 +13,56 @@ import {
   claveFecha,
   generarIntervalos,
   refrigerioEfectivo,
-  enVacaciones,
+  sumarMinutos,
   type RangoVacaciones,
 } from "../horario";
+import {
+  estadoCelda,
+  type CitaOcupada,
+  type EstadoCelda,
+  type ModalidadTerapia,
+} from "../disponibilidad";
 
 const initial: ActionState = { ok: false };
 /** Máximo de semanas hacia adelante que se pueden navegar (~1 año). */
 const MAX_SEMANAS = 60;
 
 type Opcion = { id: string; nombre: string };
-/** Terapeuta con su refrigerio propio (opcional) y vacaciones futuras. */
+/** Terapeuta con su refrigerio propio, especialidades y vacaciones futuras. */
 type TerapeutaOpt = Opcion & {
   refrigerioInicio: string | null;
   refrigerioFin: string | null;
+  especialidadIds: string[];
   vacaciones: RangoVacaciones[];
 };
-type ProgramaOpt = {
-  id: string;
-  nombre: string;
+type TerapiaOpt = Opcion & {
+  activo: boolean;
+  modalidad: ModalidadTerapia;
+  maxParticipantes: number;
+  /** Duración de cada sesión de la terapia (min). */
   duracionMin: number;
-  maxPacientes: number;
+  especialidadId: string | null;
+  especialidad: string | null;
 };
-/** Cita futura de la sede (precalculada en el server con su día y clave). */
-type CitaOcup = {
-  terapeutaId: string | null;
+type EvaluacionOpt = {
+  id: string;
   pacienteId: string;
-  dia: number; // getDay(): 0=Dom..6=Sáb
-  clave: string; // "YYYY-MM-DD"
-  horaInicio: string;
-  horaFin: string;
+  etiqueta: string;
+  plazoSemanas: number;
+  tratamiento: { terapiaId: string; sesiones: number; sesionesSemana: number }[];
 };
+/** Cita futura de la sede (precalculada en el server con su clave). */
+type CitaOcup = CitaOcupada & { terapeutaId: string | null };
 
-/** Estado de disponibilidad de una celda del calendario. */
-type EstadoCelda =
-  | "libre"
-  | "parcial"
-  | "lleno"
-  | "pacienteOcupado"
-  | "feriado"
-  | "vacaciones"
-  | "pasado";
-
-/** Solapamiento de rangos "HH:mm" (comparación lexicográfica). */
-function solapan(aI: string, aF: string, bI: string, bF: string): boolean {
-  return aI < bF && aF > bI;
-}
+/** Una terapia del tratamiento, tal como se va agendando. */
+type Linea = {
+  terapiaId: string;
+  terapeutaId: string;
+  total: string;
+  sesionesSemana: number;
+  /** Sesiones marcadas: clave "YYYY-MM-DD" → hora de inicio (una por día). */
+  sel: Record<string, string>;
+};
 
 /** Lunes (00:00 local) de la semana que contiene a `d`. */
 function lunesDeSemana(d: Date): Date {
@@ -92,11 +98,50 @@ function fmtClave(clave: string): string {
   });
 }
 
+function totalDe(l: Linea): number {
+  return Math.max(0, Math.floor(Number(l.total) || 0));
+}
+
+function lineasDeEvaluacion(ev: EvaluacionOpt | undefined): Linea[] {
+  return (ev?.tratamiento ?? []).map((t) => ({
+    terapiaId: t.terapiaId,
+    terapeutaId: "",
+    total: String(t.sesiones),
+    sesionesSemana: t.sesionesSemana,
+    sel: {},
+  }));
+}
+
+const ESTILO_CELDA: Record<EstadoCelda, string> = {
+  libre: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+  parcial: "bg-amber-50 text-amber-700 hover:bg-amber-100",
+  lleno: "cursor-not-allowed bg-red-50 text-red-300",
+  ocupado: "cursor-not-allowed bg-red-50 text-red-300",
+  feriado: "cursor-not-allowed bg-violet-50 text-violet-400",
+  vacaciones: "cursor-not-allowed bg-teal-50 text-teal-500",
+  pacienteOcupado: "cursor-not-allowed bg-slate-100 text-slate-300",
+  pasado: "cursor-not-allowed bg-slate-50 text-slate-300",
+};
+
+const TEXTO_CELDA: Record<EstadoCelda, string> = {
+  libre: "Libre",
+  parcial: "Grupo",
+  lleno: "Lleno",
+  ocupado: "Ocupado",
+  feriado: "Feriado",
+  vacaciones: "Vacac.",
+  pacienteOcupado: "Paciente",
+  pasado: "—",
+};
+
 export default function NuevoPaqueteForm({
   sedeId,
   pacientes,
+  evaluaciones,
+  pacienteInicial,
+  evaluacionInicialId,
+  terapias,
   terapeutas,
-  programas,
   horaApertura,
   horaCierre,
   refrigerioInicio,
@@ -109,8 +154,13 @@ export default function NuevoPaqueteForm({
 }: {
   sedeId: string;
   pacientes: Opcion[];
+  evaluaciones: EvaluacionOpt[];
+  /** Paciente preseleccionado (desde su ficha o desde una evaluación). */
+  pacienteInicial?: string;
+  /** Evaluación elegida; por defecto, la más reciente del paciente. */
+  evaluacionInicialId?: string;
+  terapias: TerapiaOpt[];
   terapeutas: TerapeutaOpt[];
-  programas: ProgramaOpt[];
   horaApertura: string;
   horaCierre: string;
   refrigerioInicio: string | null;
@@ -128,14 +178,18 @@ export default function NuevoPaqueteForm({
     formKey,
   } = useFormReintento<ActionState>(crearPaquete, initial);
 
-  const [pacienteId, setPacienteId] = useState("");
-  const [terapeutaId, setTerapeutaId] = useState("");
-  const [programaId, setProgramaId] = useState(programas[0]?.id ?? "");
-  // Total de sesiones a marcar (controlado: define cuántas faltan).
-  const [totalStr, setTotalStr] = useState("12");
-  // Sesiones marcadas: clave de fecha "YYYY-MM-DD" → hora de inicio.
-  // (Cada entrada es una sesión concreta; NO se repite por semana.)
-  const [sesionesSel, setSesionesSel] = useState<Record<string, string>>({});
+  // Evaluación de partida: la indicada o, si no, la más reciente del paciente
+  // (`evaluaciones` viene ordenada de la más nueva a la más antigua).
+  const evaluacionDePartida =
+    evaluaciones.find((e) => e.id === evaluacionInicialId) ??
+    evaluaciones.find((e) => e.pacienteId === pacienteInicial);
+  const [pacienteId, setPacienteId] = useState(pacienteInicial ?? "");
+  const [evaluacionId, setEvaluacionId] = useState(evaluacionDePartida?.id ?? "");
+  const [lineas, setLineas] = useState<Linea[]>(() =>
+    lineasDeEvaluacion(evaluacionDePartida),
+  );
+  // Terapia del tratamiento que se está agendando en el calendario.
+  const [activa, setActiva] = useState(0);
   // Semana mostrada: 0 = semana actual.
   const [semana, setSemana] = useState(0);
   // Paso de la grilla (min entre horas de inicio ofrecidas). Es solo un modo
@@ -143,29 +197,54 @@ export default function NuevoPaqueteForm({
   const [paso, setPaso] = useState(
     intervaloCalendario > 0 ? intervaloCalendario : 30,
   );
-  // Opciones del selector "Intervalo" (lista configurada por la sede).
   const pasosVista = useMemo(
     () => opcionesPaso(intervalosCalendario, intervaloCalendario),
     [intervalosCalendario, intervaloCalendario],
   );
 
-  const programa = programas.find((p) => p.id === programaId);
-  const duracionMin = programa?.duracionMin ?? 45;
-  const cupo = programa?.maxPacientes ?? 1;
+  const terapiaPorId = useMemo(() => new Map(terapias.map((t) => [t.id, t])), [terapias]);
+  const terapeutaPorId = useMemo(
+    () => new Map(terapeutas.map((t) => [t.id, t])),
+    [terapeutas],
+  );
+  const evaluacionesPaciente = evaluaciones.filter((e) => e.pacienteId === pacienteId);
 
-  const total = Math.max(0, Math.floor(Number(totalStr) || 0));
-  const marcadas = Object.keys(sesionesSel).length;
-  const faltan = Math.max(0, total - marcadas);
-  const completo = total > 0 && marcadas === total;
+  function elegirPaciente(id: string) {
+    setPacienteId(id);
+    // Por defecto, la evaluación más reciente del paciente.
+    const ev = evaluaciones.find((e) => e.pacienteId === id);
+    setEvaluacionId(ev?.id ?? "");
+    setLineas(lineasDeEvaluacion(ev));
+    setActiva(0);
+  }
+  function elegirEvaluacion(id: string) {
+    setEvaluacionId(id);
+    setLineas(lineasDeEvaluacion(evaluaciones.find((e) => e.id === id)));
+    setActiva(0);
+  }
+  function cambiarLinea(i: number, cambio: Partial<Linea>) {
+    setLineas((prev) => prev.map((l, j) => (j === i ? { ...l, ...cambio } : l)));
+  }
 
-  const terapeuta = terapeutas.find((t) => t.id === terapeutaId);
+  const linea = lineas[activa] as Linea | undefined;
+  const terapia = linea ? terapiaPorId.get(linea.terapiaId) : undefined;
+  const terapeuta = linea ? terapeutaPorId.get(linea.terapeutaId) : undefined;
+  // La duración de la sesión la define la terapia.
+  const duracionMin = terapia?.duracionMin ?? 45;
+  const total = linea ? totalDe(linea) : 0;
+  const marcadas = linea ? Object.keys(linea.sel).length : 0;
+
+  /** Terapeutas que pueden atender una terapia (por su especialidad). */
+  function terapeutasPara(t: TerapiaOpt | undefined): TerapeutaOpt[] {
+    if (!t?.especialidadId) return terapeutas;
+    return terapeutas.filter((x) => x.especialidadIds.includes(t.especialidadId!));
+  }
+
   // El refrigerio propio del terapeuta elegido reemplaza al de la sede.
   const refrigerio = useMemo(
     () => refrigerioEfectivo({ refrigerioInicio, refrigerioFin }, terapeuta),
     [refrigerioInicio, refrigerioFin, terapeuta],
   );
-  const refrigerioPropio =
-    !!terapeuta?.refrigerioInicio && !!terapeuta?.refrigerioFin;
 
   // El refrigerio parte la grilla: cada tramo arranca su propia rejilla, así
   // que la primera hora tras el descanso es justo cuando este termina.
@@ -180,20 +259,16 @@ export default function NuevoPaqueteForm({
     [diasLaborales],
   );
 
-  // Referencias de fecha.
   const hoy = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
   const hoyClave = claveFecha(hoy);
-  const lunesBase = useMemo(() => lunesDeSemana(hoy), [hoy]);
   const lunesSemana = useMemo(
-    () => sumarDias(lunesBase, semana * 7),
-    [lunesBase, semana],
+    () => sumarDias(lunesDeSemana(hoy), semana * 7),
+    [hoy, semana],
   );
-
-  // Fecha real de cada día laboral en la semana mostrada.
   const fechaDeDia = useMemo(() => {
     const m = new Map<number, Date>();
     for (const d of diasDisponibles) {
@@ -202,129 +277,117 @@ export default function NuevoPaqueteForm({
     return m;
   }, [diasDisponibles, lunesSemana]);
 
-  // Cambiar de programa (duración) o terapeuta invalida las horas/colores: se
-  // limpian las sesiones marcadas para evitar selecciones inconsistentes.
-  function cambiarPrograma(id: string) {
-    setProgramaId(id);
-    setSesionesSel({});
-  }
-  function cambiarTerapeuta(id: string) {
-    setTerapeutaId(id);
-    setSesionesSel({});
-  }
-
-  // Disponibilidad por celda (día + intervalo) en la SEMANA MOSTRADA, según las
-  // citas reales del terapeuta y del paciente elegidos.
-  const disponibilidad = useMemo(() => {
-    const mapa = new Map<string, EstadoCelda>();
-    if (!terapeutaId) return mapa;
-
-    const citasTer = citas.filter((c) => c.terapeutaId === terapeutaId);
-    const citasPac = pacienteId
+  // Lo que ya ocupa al paciente: sus citas y lo marcado en las OTRAS terapias
+  // de este mismo paquete (con la duración de cada terapia).
+  const citasPaciente = useMemo(() => {
+    const out: CitaOcupada[] = pacienteId
       ? citas.filter((c) => c.pacienteId === pacienteId)
       : [];
-    const feriadosSet = new Set(feriados);
+    lineas.forEach((l, i) => {
+      if (i === activa) return;
+      const dur = terapiaPorId.get(l.terapiaId)?.duracionMin ?? 45;
+      for (const [clave, hora] of Object.entries(l.sel)) {
+        out.push({
+          clave,
+          pacienteId,
+          terapiaId: l.terapiaId,
+          horaInicio: hora,
+          horaFin: sumarMinutos(hora, dur),
+        });
+      }
+    });
+    return out;
+  }, [citas, pacienteId, lineas, activa, terapiaPorId]);
 
+  // Disponibilidad por celda (día + intervalo) en la SEMANA MOSTRADA.
+  const disponibilidad = useMemo(() => {
+    const mapa = new Map<string, EstadoCelda>();
+    if (!terapeuta || !terapia) return mapa;
+    const citasTer = citas.filter((c) => c.terapeutaId === terapeuta.id);
+    const feriadosSet = new Set(feriados);
     for (const dia of diasDisponibles) {
       const clave = claveFecha(fechaDeDia.get(dia)!);
       for (const intv of intervalos) {
-        const key = `${clave}|${intv.inicio}`;
-
-        if (clave < hoyClave) {
-          mapa.set(key, "pasado");
-          continue;
-        }
-        if (feriadosSet.has(clave)) {
-          mapa.set(key, "feriado");
-          continue;
-        }
-        if (terapeuta && enVacaciones(terapeuta.vacaciones, clave)) {
-          mapa.set(key, "vacaciones");
-          continue;
-        }
-
-        // El paciente ya tiene una sesión que se cruza ese día.
-        const pacConflicto = citasPac.some(
-          (c) =>
-            c.clave === clave &&
-            solapan(intv.inicio, intv.fin, c.horaInicio, c.horaFin),
-        );
-        if (pacConflicto) {
-          mapa.set(key, "pacienteOcupado");
-          continue;
-        }
-
-        // Pacientes distintos del terapeuta en esa fecha/franja (excl. el propio).
-        const otros = new Set<string>();
-        for (const c of citasTer) {
-          if (c.clave !== clave) continue;
-          if (!solapan(intv.inicio, intv.fin, c.horaInicio, c.horaFin)) continue;
-          if (c.pacienteId === pacienteId) continue;
-          otros.add(c.pacienteId);
-        }
         mapa.set(
-          key,
-          otros.size >= cupo ? "lleno" : otros.size > 0 ? "parcial" : "libre",
+          `${clave}|${intv.inicio}`,
+          estadoCelda({
+            clave,
+            horaInicio: intv.inicio,
+            horaFin: intv.fin,
+            hoyClave,
+            feriados: feriadosSet,
+            vacaciones: terapeuta.vacaciones,
+            citasTerapeuta: citasTer,
+            citasPaciente,
+            terapia,
+            pacienteId: pacienteId || undefined,
+          }),
         );
       }
     }
     return mapa;
   }, [
     citas,
-    terapeutaId,
+    terapeuta,
+    terapia,
     pacienteId,
+    citasPaciente,
     intervalos,
     diasDisponibles,
-    cupo,
     fechaDeDia,
     feriados,
     hoyClave,
-    terapeuta,
   ]);
 
   function toggleCelda(clave: string, hora: string, seleccionable: boolean) {
-    setSesionesSel((prev) => {
-      const next = { ...prev };
+    if (!linea) return;
+    const next = { ...linea.sel };
+    if (next[clave] === hora) {
       // Clic en la celda ya elegida ese día → la quita.
-      if (next[clave] === hora) {
-        delete next[clave];
-        return next;
-      }
-      if (!seleccionable) return prev;
-      const yaTieneEseDia = clave in next;
-      // No permitir superar el total (salvo que sea mover la hora del mismo día).
-      if (!yaTieneEseDia && total > 0 && Object.keys(next).length >= total) {
-        return prev;
-      }
+      delete next[clave];
+    } else {
+      if (!seleccionable) return;
+      // No superar el total (salvo que sea mover la hora del mismo día).
+      if (!(clave in next) && total > 0 && Object.keys(next).length >= total) return;
       next[clave] = hora; // una sola hora por día concreto
-      return next;
-    });
+    }
+    cambiarLinea(activa, { sel: next });
   }
 
-  // Sesiones marcadas en orden cronológico (clave "YYYY-MM-DD" ordena bien).
-  const seleccionadas = useMemo(
-    () =>
-      Object.entries(sesionesSel)
-        .map(([clave, hora]) => ({ clave, hora }))
-        .sort((a, b) =>
-          a.clave === b.clave
-            ? a.hora.localeCompare(b.hora)
-            : a.clave.localeCompare(b.clave),
-        ),
-    [sesionesSel],
-  );
+  // Sesiones marcadas en la semana mostrada, para compararlas con lo sugerido.
+  const marcadasSemana = useMemo(() => {
+    const lunes = claveFecha(lunesSemana);
+    const domingo = claveFecha(sumarDias(lunesSemana, 6));
+    return Object.keys(linea?.sel ?? {}).filter((c) => c >= lunes && c <= domingo)
+      .length;
+  }, [linea, lunesSemana]);
 
-  const sesionesJSON = JSON.stringify(
-    seleccionadas.map((s) => ({ fecha: s.clave, hora: s.hora })),
+  const lineasCompletas = lineas.map(
+    (l) => !!l.terapeutaId && totalDe(l) > 0 && Object.keys(l.sel).length === totalDe(l),
+  );
+  const todoCompleto = lineas.length > 0 && lineasCompletas.every(Boolean);
+  const terapiaInactiva = lineas.some((l) => !terapiaPorId.get(l.terapiaId)?.activo);
+
+  const lineasJSON = JSON.stringify(
+    lineas.map((l) => ({
+      terapiaId: l.terapiaId,
+      terapeutaId: l.terapeutaId,
+      sesiones: Object.entries(l.sel)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([fecha, hora]) => ({ fecha, hora })),
+    })),
   );
 
   const sinIntervalos = intervalos.length === 0;
   const finSemana = sumarDias(lunesSemana, 5); // sáb
+  const seleccionadas = Object.entries(linea?.sel ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
 
   return (
     <form key={formKey} {...formProps} className="space-y-4">
       <input type="hidden" name="sedeId" value={sedeId} />
-      <input type="hidden" name="sesiones" value={sesionesJSON} />
+      <input type="hidden" name="lineas" value={lineasJSON} />
 
       <Field label="Paciente" required>
         <Combobox
@@ -332,307 +395,328 @@ export default function NuevoPaqueteForm({
           required
           options={pacientes}
           value={pacienteId}
-          onChange={setPacienteId}
+          onChange={elegirPaciente}
           placeholder="Seleccione un paciente…"
         />
       </Field>
 
-      <Field label="Programa" required>
-        <Select
-          name="programaId"
-          required
-          value={programaId}
-          onChange={(e) => cambiarPrograma(e.target.value)}
-        >
-          {programas.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nombre} · {p.duracionMin} min
-            </option>
-          ))}
-        </Select>
-      </Field>
-
-      <Field label="Terapeuta" required>
-        <Select
-          name="terapeutaId"
-          required
-          value={terapeutaId}
-          onChange={(e) => cambiarTerapeuta(e.target.value)}
-        >
-          <option value="" disabled>
-            Seleccione un terapeuta…
-          </option>
-          {terapeutas.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.nombre}
-            </option>
-          ))}
-        </Select>
-        {programa && programa.maxPacientes > 1 && (
-          <p className="mt-1 text-xs text-slate-400">
-            Programa grupal: hasta {programa.maxPacientes} pacientes por terapeuta
-            en la misma fecha y hora.
-          </p>
-        )}
-      </Field>
-
-      <Field label="Total de sesiones" required>
-        <Input
-          type="number"
-          name="totalSesiones"
-          min={1}
-          max={60}
-          value={totalStr}
-          onChange={(e) => setTotalStr(e.target.value)}
-          required
-          className="max-w-[10rem]"
-        />
-        <p className="mt-1 text-xs text-slate-400">
-          Marca esta cantidad de sesiones en el calendario, una por una.
-        </p>
-      </Field>
-
-      <Field label="Calendario — marca cada sesión en su fecha" required>
-        {sinIntervalos ? (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            El horario de atención de la sede no permite sesiones de{" "}
-            {duracionMin} min. Ajusta el horario en Configuración › Horario de
-            atención.
-          </p>
-        ) : !terapeutaId ? (
-          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">
-            Selecciona un terapeuta para ver su calendario de disponibilidad.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {/* Progreso de marcado */}
-            <div
-              className={[
-                "rounded-lg px-3 py-2 text-sm",
-                completo
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-sky-50 text-sky-800",
-              ].join(" ")}
+      {pacienteId && (
+        <Field label="Evaluación (tratamiento)" required>
+          {evaluacionesPaciente.length === 0 ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              El paciente no tiene una evaluación con tratamiento sugerido.
+              Registra su evaluación inicial (con las terapias y sesiones) antes
+              de programar el paquete.
+            </p>
+          ) : (
+            <Select
+              name="evaluacionId"
+              required
+              value={evaluacionId}
+              onChange={(e) => elegirEvaluacion(e.target.value)}
             >
-              {completo ? (
-                <>
-                  Listo: marcaste las <b>{total}</b> sesiones.
-                </>
-              ) : marcadas === 0 ? (
-                <>
-                  Marca <b>{total}</b> sesión(es) navegando por las semanas.
-                </>
+              {evaluacionesPaciente.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.etiqueta}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
+
+      {lineas.length > 0 && (
+        <div className="space-y-3">
+          {/* Una pestaña por terapia del tratamiento */}
+          <div className="flex flex-wrap gap-2" role="tablist">
+            {lineas.map((l, i) => {
+              const t = terapiaPorId.get(l.terapiaId);
+              const n = Object.keys(l.sel).length;
+              return (
+                <button
+                  key={l.terapiaId}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === activa}
+                  onClick={() => setActiva(i)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-left text-sm transition",
+                    i === activa
+                      ? "border-sky-600 bg-sky-50 text-sky-900"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  )}
+                >
+                  <span className="block font-medium">{t?.nombre ?? "Terapia"}</span>
+                  <span
+                    className={cn(
+                      "text-xs",
+                      lineasCompletas[i] ? "text-emerald-700" : "text-slate-500",
+                    )}
+                  >
+                    {lineasCompletas[i] ? "✓ " : ""}
+                    {n} / {totalDe(l)} sesiones
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {linea && terapia && (
+            <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+              <p className="text-sm text-slate-600">
+                {terapia.especialidad ?? "Sin especialidad"} · {terapia.duracionMin} min ·{" "}
+                {terapia.modalidad === "GRUPAL"
+                  ? `Grupal: hasta ${terapia.maxParticipantes} pacientes por franja`
+                  : "Individual"}{" "}
+                · Sugerido: {linea.sesionesSemana} por semana
+              </p>
+              {!terapia.activo && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  Esta terapia está inactiva. Actívala en Configuración › Terapias
+                  o elige otra evaluación.
+                </p>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
+                <Field label="Terapeuta" required>
+                  <Select
+                    value={linea.terapeutaId}
+                    onChange={(e) =>
+                      // Cambia la disponibilidad: se limpian las marcas.
+                      cambiarLinea(activa, { terapeutaId: e.target.value, sel: {} })
+                    }
+                  >
+                    <option value="" disabled>
+                      Seleccione un terapeuta…
+                    </option>
+                    {terapeutasPara(terapia).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nombre}
+                      </option>
+                    ))}
+                  </Select>
+                  {terapeutasPara(terapia).length === 0 && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Ningún terapeuta activo tiene la especialidad{" "}
+                      {terapia.especialidad}.
+                    </p>
+                  )}
+                </Field>
+                <Field label="Sesiones" required>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={linea.total}
+                    onChange={(e) => cambiarLinea(activa, { total: e.target.value })}
+                  />
+                </Field>
+              </div>
+
+              {sinIntervalos ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                  El horario de atención de la sede no permite sesiones de{" "}
+                  {duracionMin} min. Ajusta el horario en Configuración › Horario
+                  de atención.
+                </p>
+              ) : !terapeuta ? (
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                  Selecciona un terapeuta para ver su calendario de disponibilidad.
+                </p>
               ) : (
-                <>
-                  Marcadas <b>{marcadas}</b> de <b>{total}</b> · faltan{" "}
-                  <b>{faltan}</b>.
-                </>
+                <div className="space-y-3">
+                  <div
+                    className={cn(
+                      "rounded-lg px-3 py-2 text-sm",
+                      marcadas === total && total > 0
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-sky-50 text-sky-800",
+                    )}
+                  >
+                    Marcadas <b>{marcadas}</b> de <b>{total}</b>
+                    {marcadas < total && (
+                      <>
+                        {" "}
+                        · faltan <b>{total - marcadas}</b>
+                      </>
+                    )}
+                    . Esta semana: <b>{marcadasSemana}</b> (sugerido{" "}
+                    {linea.sesionesSemana}).
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
+                    <span>Intervalo:</span>
+                    <select
+                      value={paso}
+                      onChange={(e) => setPaso(Number(e.target.value))}
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-sky-500 focus:outline-none"
+                    >
+                      {pasosVista.map((p) => (
+                        <option key={p} value={p}>
+                          {p} min
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSemana((s) => Math.max(0, s - 1))}
+                      disabled={semana === 0}
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-600 disabled:opacity-40 hover:bg-slate-50"
+                    >
+                      ‹ Semana anterior
+                    </button>
+                    <span className="text-sm font-medium text-slate-700">
+                      {fmtCorta(lunesSemana)} – {fmtCorta(finSemana)}{" "}
+                      {finSemana.getFullYear()}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSemana((s) => Math.min(MAX_SEMANAS, s + 1))}
+                      disabled={semana >= MAX_SEMANAS}
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-600 disabled:opacity-40 hover:bg-slate-50"
+                    >
+                      Semana siguiente ›
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="border-separate border-spacing-1 text-xs">
+                      <thead>
+                        <tr>
+                          <th className="p-1" />
+                          {diasDisponibles.map((d) => (
+                            <th key={d} className="px-2 py-1 font-medium text-slate-600">
+                              {DIA_NOMBRE[d].slice(0, 3)}
+                              <span className="block text-[10px] font-normal text-slate-400">
+                                {fechaDeDia.get(d)!.getDate()}
+                              </span>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {intervalos.map((intv, i) => (
+                          <Fragment key={intv.inicio}>
+                            {/* Corte visible entre los dos tramos del día. */}
+                            {refrigerio &&
+                              intv.inicio >= refrigerio.fin &&
+                              (i === 0 || intervalos[i - 1].inicio < refrigerio.fin) && (
+                                <tr>
+                                  <td
+                                    colSpan={diasDisponibles.length + 1}
+                                    className="py-1 text-center text-[11px] text-orange-500"
+                                  >
+                                    Refrigerio · {refrigerio.inicio}–{refrigerio.fin}
+                                  </td>
+                                </tr>
+                              )}
+                            <tr>
+                              <td className="whitespace-nowrap pr-2 text-right text-slate-400">
+                                {intv.inicio}
+                              </td>
+                              {diasDisponibles.map((d) => {
+                                const clave = claveFecha(fechaDeDia.get(d)!);
+                                const estado =
+                                  disponibilidad.get(`${clave}|${intv.inicio}`) ?? "libre";
+                                const elegido = linea.sel[clave] === intv.inicio;
+                                const seleccionable =
+                                  estado === "libre" || estado === "parcial";
+                                // Si ya se alcanzó el total, no se pueden añadir nuevas.
+                                const bloqueadoPorTope =
+                                  !elegido &&
+                                  !(clave in linea.sel) &&
+                                  total > 0 &&
+                                  marcadas >= total;
+                                return (
+                                  <td key={d} className="p-0">
+                                    <button
+                                      type="button"
+                                      disabled={(!seleccionable && !elegido) || bloqueadoPorTope}
+                                      onClick={() =>
+                                        toggleCelda(clave, intv.inicio, seleccionable)
+                                      }
+                                      title={`${DIA_NOMBRE[d]} ${fechaDeDia
+                                        .get(d)!
+                                        .getDate()} · ${intv.inicio}–${intv.fin}`}
+                                      className={cn(
+                                        "w-full rounded px-2 py-1 text-[11px] font-medium transition",
+                                        elegido
+                                          ? "bg-sky-600 text-white"
+                                          : bloqueadoPorTope && seleccionable
+                                            ? "cursor-not-allowed bg-slate-50 text-slate-300"
+                                            : ESTILO_CELDA[estado],
+                                      )}
+                                    >
+                                      {elegido ? "Elegido" : TEXTO_CELDA[estado]}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
+                    <Leyenda clase="bg-emerald-50 text-emerald-700" texto="Libre" />
+                    <Leyenda clase="bg-amber-50 text-amber-700" texto="Grupo con cupo" />
+                    <Leyenda
+                      clase="bg-red-50 text-red-300"
+                      texto="Terapeuta ocupado / grupo lleno"
+                    />
+                    <Leyenda
+                      clase="bg-slate-100 text-slate-300"
+                      texto="Paciente ocupado (otra sesión o terapia)"
+                    />
+                    <Leyenda clase="bg-violet-50 text-violet-400" texto="Feriado" />
+                    <Leyenda
+                      clase="bg-teal-50 text-teal-500"
+                      texto="Terapeuta de vacaciones"
+                    />
+                    <Leyenda clase="bg-sky-600 text-white" texto="Elegido" />
+                  </div>
+
+                  {seleccionadas.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-slate-600">
+                        Sesiones marcadas ({seleccionadas.length}):
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {seleccionadas.map(([clave, hora]) => (
+                          <button
+                            key={clave}
+                            type="button"
+                            onClick={() => toggleCelda(clave, hora, true)}
+                            title="Quitar esta sesión"
+                            className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-800 hover:bg-sky-200"
+                          >
+                            {fmtClave(clave)} · {hora}
+                            <span className="text-sky-500">×</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {refrigerio && (
+                    <p className="text-xs text-slate-400">
+                      Refrigerio de {refrigerio.inicio} a {refrigerio.fin}: el
+                      calendario no ofrece horas que se crucen con él.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
+          )}
+        </div>
+      )}
 
-            {/* Paso de la grilla (modo de vista) */}
-            <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
-              <span>Intervalo:</span>
-              <select
-                value={paso}
-                onChange={(e) => setPaso(Number(e.target.value))}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-sky-500 focus:outline-none"
-              >
-                {pasosVista.map((p) => (
-                  <option key={p} value={p}>
-                    {p} min
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Navegación de semana */}
-            <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setSemana((s) => Math.max(0, s - 1))}
-                disabled={semana === 0}
-                className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-              >
-                ‹ Semana anterior
-              </button>
-              <span className="text-sm font-medium text-slate-700">
-                {fmtCorta(lunesSemana)} – {fmtCorta(finSemana)}{" "}
-                {finSemana.getFullYear()}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSemana((s) => Math.min(MAX_SEMANAS, s + 1))}
-                disabled={semana >= MAX_SEMANAS}
-                className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-              >
-                Semana siguiente ›
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="border-separate border-spacing-1 text-xs">
-                <thead>
-                  <tr>
-                    <th className="p-1" />
-                    {diasDisponibles.map((d) => (
-                      <th
-                        key={d}
-                        className="px-2 py-1 font-medium text-slate-600"
-                      >
-                        {DIA_NOMBRE[d].slice(0, 3)}
-                        <span className="block text-[10px] font-normal text-slate-400">
-                          {fechaDeDia.get(d)!.getDate()}
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {intervalos.map((intv, i) => (
-                    <Fragment key={intv.inicio}>
-                      {/* Corte visible entre los dos tramos del día. */}
-                      {refrigerio &&
-                        intv.inicio >= refrigerio.fin &&
-                        (i === 0 || intervalos[i - 1].inicio < refrigerio.fin) && (
-                          <tr>
-                            <td
-                              colSpan={diasDisponibles.length + 1}
-                              className="py-1 text-center text-[11px] text-orange-500"
-                            >
-                              Refrigerio · {refrigerio.inicio}–{refrigerio.fin}
-                            </td>
-                          </tr>
-                        )}
-                    <tr>
-                      <td className="whitespace-nowrap pr-2 text-right text-slate-400">
-                        {intv.inicio}
-                      </td>
-                      {diasDisponibles.map((d) => {
-                        const clave = claveFecha(fechaDeDia.get(d)!);
-                        const estado =
-                          disponibilidad.get(`${clave}|${intv.inicio}`) ??
-                          "libre";
-                        const elegido = sesionesSel[clave] === intv.inicio;
-                        const seleccionable =
-                          estado === "libre" || estado === "parcial";
-                        // Si ya se alcanzó el total, no se pueden añadir nuevas.
-                        const bloqueadoPorTope =
-                          !elegido &&
-                          !(clave in sesionesSel) &&
-                          total > 0 &&
-                          marcadas >= total;
-                        const deshabilitado =
-                          (!seleccionable && !elegido) || bloqueadoPorTope;
-                        return (
-                          <td key={d} className="p-0">
-                            <button
-                              type="button"
-                              disabled={deshabilitado}
-                              onClick={() =>
-                                toggleCelda(clave, intv.inicio, seleccionable)
-                              }
-                              title={`${DIA_NOMBRE[d]} ${fechaDeDia
-                                .get(d)!
-                                .getDate()} · ${intv.inicio}–${intv.fin}`}
-                              className={[
-                                "w-full rounded px-2 py-1 text-[11px] font-medium transition",
-                                elegido
-                                  ? "bg-sky-600 text-white"
-                                  : bloqueadoPorTope && seleccionable
-                                    ? "cursor-not-allowed bg-slate-50 text-slate-300"
-                                    : estado === "libre"
-                                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                      : estado === "parcial"
-                                        ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                        : estado === "lleno"
-                                          ? "cursor-not-allowed bg-red-50 text-red-300"
-                                          : estado === "feriado"
-                                            ? "cursor-not-allowed bg-violet-50 text-violet-400"
-                                            : estado === "vacaciones"
-                                              ? "cursor-not-allowed bg-teal-50 text-teal-500"
-                                            : estado === "pacienteOcupado"
-                                              ? "cursor-not-allowed bg-slate-100 text-slate-300"
-                                              : "cursor-not-allowed bg-slate-50 text-slate-300",
-                              ].join(" ")}
-                            >
-                              {elegido
-                                ? "Elegido"
-                                : estado === "libre"
-                                  ? "Libre"
-                                  : estado === "parcial"
-                                    ? "Disp."
-                                    : estado === "lleno"
-                                      ? "Lleno"
-                                      : estado === "feriado"
-                                        ? "Feriado"
-                                        : estado === "vacaciones"
-                                          ? "Vacac."
-                                        : estado === "pacienteOcupado"
-                                          ? "Paciente"
-                                          : "—"}
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
-              <Leyenda clase="bg-emerald-50 text-emerald-700" texto="Libre" />
-              <Leyenda
-                clase="bg-amber-50 text-amber-700"
-                texto="Con cupo (grupal)"
-              />
-              <Leyenda clase="bg-red-50 text-red-300" texto="Terapeuta lleno" />
-              <Leyenda
-                clase="bg-slate-100 text-slate-300"
-                texto="Paciente ocupado"
-              />
-              <Leyenda clase="bg-violet-50 text-violet-400" texto="Feriado" />
-              <Leyenda
-                clase="bg-teal-50 text-teal-500"
-                texto="Terapeuta de vacaciones"
-              />
-              <Leyenda clase="bg-sky-600 text-white" texto="Elegido" />
-            </div>
-
-            {seleccionadas.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-slate-600">
-                  Sesiones marcadas ({seleccionadas.length}):
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {seleccionadas.map((s) => (
-                    <button
-                      key={s.clave}
-                      type="button"
-                      onClick={() =>
-                        setSesionesSel((prev) => {
-                          const n = { ...prev };
-                          delete n[s.clave];
-                          return n;
-                        })
-                      }
-                      title="Quitar esta sesión"
-                      className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-800 hover:bg-sky-200"
-                    >
-                      {fmtClave(s.clave)} · {s.hora}
-                      <span className="text-sky-500">×</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Field>
-
-      <Field label="Precio (S/)" required>
+      <Field label="Precio del paquete (S/)" required>
         <Input
           type="number"
           name="precio"
@@ -647,22 +731,6 @@ export default function NuevoPaqueteForm({
         <Textarea name="observacion" placeholder="Notas del paquete…" />
       </Field>
 
-      {feriados.length > 0 && (
-        <p className="text-xs text-slate-400">
-          Los días feriados de la sede aparecen marcados y no se pueden
-          seleccionar.
-        </p>
-      )}
-
-      {refrigerio && (
-        <p className="text-xs text-slate-400">
-          Refrigerio{refrigerioPropio ? " del terapeuta" : ""} de{" "}
-          {refrigerio.inicio} a {refrigerio.fin}: el calendario no
-          ofrece horas que se crucen con él, y tras el descanso vuelve a empezar
-          en {refrigerio.fin}.
-        </p>
-      )}
-
       {state.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {state.error}
@@ -670,15 +738,12 @@ export default function NuevoPaqueteForm({
       )}
 
       <div className="flex justify-end gap-2 pt-2">
-        <Button
-          type="submit"
-          disabled={pending || sinIntervalos || !terapeutaId || !completo}
-        >
+        <Button type="submit" disabled={pending || !todoCompleto || terapiaInactiva}>
           {pending
             ? "Creando…"
-            : completo
+            : todoCompleto
               ? "Crear paquete"
-              : `Faltan ${faltan} sesión(es)`}
+              : "Agenda todas las terapias"}
         </Button>
       </div>
     </form>

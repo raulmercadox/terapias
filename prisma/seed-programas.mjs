@@ -1,4 +1,4 @@
-// Seed idempotente: asegura un programa "Terapia Individual" (45 min) por sede
+// Seed idempotente: asegura una terapia "Terapia Individual" por sede
 // y fija el horario laboral a 09:00–18:00, Lun–Sáb (getDay 1..6).
 // Ejecutar con: node --env-file=.env prisma/seed-programas.mjs
 import { PrismaClient } from "@prisma/client";
@@ -20,17 +20,19 @@ try {
   }
   for (const s of sedes) {
     await prisma.sede.update({ where: { id: s.id }, data: HORARIO });
-    await prisma.programaTerapia.upsert({
+    await prisma.terapia.upsert({
       where: { sedeId_nombre: { sedeId: s.id, nombre: "Terapia Individual" } },
-      update: { duracionMin: 45, activo: true },
+      update: { activo: true },
       create: {
         sedeId: s.id,
         nombre: "Terapia Individual",
+        modalidad: "INDIVIDUAL",
         duracionMin: 45,
+        maxParticipantes: 1,
         activo: true,
       },
     });
-    console.log(`✓ Sede "${s.nombre}": horario 09:00–18:00 Lun–Sáb + programa Terapia Individual (45 min)`);
+    console.log(`✓ Sede "${s.nombre}": horario 09:00–18:00 Lun–Sáb + terapia Terapia Individual`);
   }
   console.log("Seed completado.");
 } finally {

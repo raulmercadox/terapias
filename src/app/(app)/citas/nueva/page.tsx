@@ -9,13 +9,13 @@ import { parseFechaISO, aISO } from "../helpers";
 export default async function NuevaCitaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fecha?: string }>;
+  searchParams: Promise<{ fecha?: string; pacienteId?: string }>;
 }) {
   const user = await requireUser();
   // El terapeuta no gestiona paquetes ni agenda citas libremente.
   if (esTerapeuta(user)) notFound();
   const sedeId = await requireActiveSede(user);
-  const { fecha: fechaParam } = await searchParams;
+  const { fecha: fechaParam, pacienteId: pacienteParam } = await searchParams;
 
   const [pacientes, terapeutas] = await Promise.all([
     prisma.paciente.findMany({
@@ -55,6 +55,10 @@ export default async function NuevaCitaPage({
             nombre: `${t.apellidos} ${t.nombres}`,
           }))}
           fechaPorDefecto={fechaDefecto}
+          // Solo si el paciente es elegible (activo y de la sede activa).
+          pacientePorDefecto={
+            pacientes.some((p) => p.id === pacienteParam) ? pacienteParam : undefined
+          }
         />
       </Card>
     </div>

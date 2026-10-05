@@ -22,6 +22,7 @@ import {
   sumarMinutos,
   telefono,
   type Franja,
+  lineaUnica,
 } from "./demo-util";
 
 process.loadEnvFile?.();
@@ -123,7 +124,7 @@ async function main() {
   await prisma.apoderado.deleteMany({ where: { paciente: { sedeId: { in: sedeIds } } } });
   await prisma.paciente.deleteMany({ where: { sedeId: { in: sedeIds } } });
   await prisma.terapeuta.deleteMany({ where: { sedeId: { in: sedeIds } } });
-  await prisma.programaTerapia.deleteMany({ where: { sedeId: { in: sedeIds } } });
+  await prisma.terapia.deleteMany({ where: { sedeId: { in: sedeIds } } });
   await prisma.feriado.deleteMany({ where: { sedeId: { in: sedeIds } } });
 
   /* ── Criterio de cobranza del centro (el 50 % del ejemplo) ── */
@@ -184,17 +185,30 @@ async function main() {
   });
   void admin;
 
-  /* ── Programas (definen la duración de la sesión) ───────── */
+  /* ── Terapias (especialidad, duración y modalidad) ──────── */
   const programas: Record<string, { id: string; duracionMin: number }> = {};
   for (const sede of [principal, sjl]) {
     for (const p of [
-      { nombre: "Terapia de lenguaje", duracionMin: 45, maxPacientes: 1 },
-      { nombre: "Terapia ocupacional", duracionMin: 45, maxPacientes: 1 },
-      { nombre: "Psicopedagogía", duracionMin: 60, maxPacientes: 1 },
-      { nombre: "Taller de socialización", duracionMin: 60, maxPacientes: 4 },
+      { nombre: "Terapia de lenguaje", especialidad: "Terapia de lenguaje", duracionMin: 45, maxParticipantes: 1 },
+      { nombre: "Terapia ocupacional", especialidad: "Terapia ocupacional", duracionMin: 45, maxParticipantes: 1 },
+      { nombre: "Psicopedagogía", especialidad: "Psicopedagogía", duracionMin: 60, maxParticipantes: 1 },
+      { nombre: "Taller de socialización", especialidad: "Psicopedagogía", duracionMin: 60, maxParticipantes: 4 },
     ]) {
-      const creado = await prisma.programaTerapia.create({
-        data: { ...p, sedeId: sede.id },
+      const creado = await prisma.terapia.create({
+        data: {
+          sede: { connect: { id: sede.id } },
+          nombre: p.nombre,
+          duracionMin: p.duracionMin,
+          modalidad: p.maxParticipantes > 1 ? "GRUPAL" : "INDIVIDUAL",
+          maxParticipantes: p.maxParticipantes,
+          // El catálogo de especialidades es del centro (la crea si no existe).
+          especialidad: {
+            connectOrCreate: {
+              where: { centroId_nombre: { centroId: centro.id, nombre: p.especialidad } },
+              create: { centroId: centro.id, nombre: p.especialidad },
+            },
+          },
+        },
       });
       programas[`${sede.id}|${p.nombre}`] = { id: creado.id, duracionMin: p.duracionMin };
     }
@@ -437,16 +451,20 @@ async function main() {
       data: {
         sedeId: principal.id,
         pacienteId: paciente.id,
-        programaId: prog.id,
         totalSesiones: c.total,
-        frecuenciaSemana: c.horario.length,
-        horarioSemanal: c.horario.map((h) => ({ dia: h.dia, hora: h.hora })),
+        terapias: lineaUnica({
+          terapiaId: prog.id,
+          terapeutaId: c.terapeutaId,
+          totalSesiones: c.total,
+          horario: c.horario,
+        }),
         precio: c.precio,
         fechaInicio,
         fechaFin,
         estado: c.estado ?? "ACTIVO",
         observacion: c.nota ?? null,
       },
+      include: { terapias: { select: { id: true } } },
     });
 
     // Sesiones pasadas: asistencia registrada (una falta y una tardanza sueltas).
@@ -473,7 +491,9 @@ async function main() {
           sedeId: principal.id,
           pacienteId: paciente.id,
           terapeutaId: c.terapeutaId,
+          terapiaId: prog.id,
           paqueteId: paquete.id,
+          paqueteTerapiaId: paquete.terapias[0].id,
           numeroSesion: i + 1,
           fecha: s.fecha,
           horaInicio: s.horaInicio,
@@ -552,16 +572,20 @@ async function main() {
       data: {
         sedeId: principal.id,
         pacienteId: camila.id,
-        programaId: progLenguaje.id,
         totalSesiones: cfg.total,
-        frecuenciaSemana: 3,
-        horarioSemanal: L_X_V(cfg.hora).map((h) => ({ dia: h.dia, hora: h.hora })),
+        terapias: lineaUnica({
+          terapiaId: progLenguaje.id,
+          terapeutaId: ana.id,
+          totalSesiones: cfg.total,
+          horario: L_X_V(cfg.hora),
+        }),
         precio: cfg.precio,
         fechaInicio: ses[0].fecha,
         fechaFin: ses[ses.length - 1].fecha,
         estado: "ACTIVO",
         observacion: idx === 0 ? "Paquete anterior, ya renovado." : "Renovación.",
       },
+      include: { terapias: { select: { id: true } } },
     });
     const hoyClave = claveFecha(hoy());
     await prisma.cita.createMany({
@@ -571,7 +595,9 @@ async function main() {
           sedeId: principal.id,
           pacienteId: camila.id,
           terapeutaId: ana.id,
+          terapiaId: progLenguaje.id,
           paqueteId: paq.id,
+          paqueteTerapiaId: paq.terapias[0].id,
           numeroSesion: i + 1,
           fecha: s.fecha,
           horaInicio: s.horaInicio,
@@ -734,15 +760,19 @@ async function main() {
       data: {
         sedeId: sjl.id,
         pacienteId: p.id,
-        programaId: progSjl.id,
         totalSesiones: 12,
-        frecuenciaSemana: 3,
-        horarioSemanal: L_X_V(c.hora).map((h) => ({ dia: h.dia, hora: h.hora })),
+        terapias: lineaUnica({
+          terapiaId: progSjl.id,
+          terapeutaId: c.terapeutaId,
+          totalSesiones: 12,
+          horario: L_X_V(c.hora),
+        }),
         precio: c.precio,
         fechaInicio: ses[0].fecha,
         fechaFin: ses[ses.length - 1].fecha,
         estado: "ACTIVO",
       },
+      include: { terapias: { select: { id: true } } },
     });
     const hoyClave = claveFecha(hoy());
     await prisma.cita.createMany({
@@ -752,7 +782,9 @@ async function main() {
           sedeId: sjl.id,
           pacienteId: p.id,
           terapeutaId: c.terapeutaId,
+          terapiaId: progSjl.id,
           paqueteId: paq.id,
+          paqueteTerapiaId: paq.terapias[0].id,
           numeroSesion: k + 1,
           fecha: s.fecha,
           horaInicio: s.horaInicio,

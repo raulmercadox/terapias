@@ -11,13 +11,13 @@ import {
   assertAccesoClinico,
   esAutorClinico,
   evaluadorParaGuardar,
-  puede,
 } from "@/lib/session";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { normalizarPlantilla } from "@/lib/fichas/plantilla";
 import { reconciliar, snapshotDe } from "@/lib/fichas/snapshot";
 import { parseValores } from "@/components/ficha/form-datos";
 import { fechaInput } from "@/lib/utils";
+import { parseTratamiento, type LineaTratamiento } from "./tratamiento";
 import { fechaEntradaEvaluacion } from "../../../seguimiento/seguimiento";
 
 export type FormState = {
@@ -32,30 +32,22 @@ function opt(value: FormDataEntryValue | null): string | undefined {
   return s === "" ? undefined : s;
 }
 
-const PROGRAMAS = ["ESCOLAR", "INTERDIARIO", "TERAPIAS"] as const;
-
 /**
  * La estructura de la ficha la manda su plantilla, así que aquí solo se validan
- * los datos que NO son del formulario clínico: la fecha, el evaluador y el
- * programa recomendado, que sale de la ficha hacia Paciente.programa.
+ * los datos que NO son del formulario clínico: la fecha, el evaluador y las
+ * recomendaciones. El tratamiento sugerido se lee aparte (leerTratamiento).
  */
 const evaluacionSchema = z.object({
   fecha: z.string().min(1, "La fecha es obligatoria."),
   evaluadorId: z.string().optional(),
-  programaRecomendado: z.enum(PROGRAMAS).optional(),
   recomendaciones: z.string().optional(),
-  aplicarPrograma: z.boolean(),
 });
 
 function parseCampos(formData: FormData) {
   return evaluacionSchema.safeParse({
     fecha: opt(formData.get("fecha")) ?? "",
     evaluadorId: opt(formData.get("evaluadorId")),
-    programaRecomendado: opt(formData.get("programaRecomendado")) as
-      | (typeof PROGRAMAS)[number]
-      | undefined,
     recomendaciones: opt(formData.get("recomendaciones")),
-    aplicarPrograma: formData.get("aplicarPrograma") === "on",
   });
 }
 
@@ -73,6 +65,33 @@ async function validarEvaluador(
 }
 
 const json = (v: unknown) => v as unknown as Prisma.InputJsonValue;
+
+/**
+ * Lee el tratamiento sugerido del formulario y verifica que sus terapias sean
+ * de la sede del paciente.
+ */
+async function leerTratamiento(
+  formData: FormData,
+  sedeId: string,
+): Promise<{ plazoSemanas: number; lineas: LineaTratamiento[] } | { error: string }> {
+  const t = parseTratamiento(formData.get("plazoSemanas"), formData.get("tratamiento"));
+  if ("error" in t) return t;
+  const ids = t.lineas.map((l) => l.terapiaId);
+  if (ids.length > 0) {
+    const encontradas = await prisma.terapia.count({
+      where: { id: { in: ids }, sedeId },
+    });
+    if (encontradas !== ids.length) {
+      return { error: "Alguna terapia del tratamiento no pertenece a la sede." };
+    }
+  }
+  return t;
+}
+
+/** Filas del tratamiento para `createMany`, en el orden del formulario. */
+function filasTratamiento(evaluacionId: string, lineas: LineaTratamiento[]) {
+  return lineas.map((l, orden) => ({ evaluacionId, orden, ...l }));
+}
 
 export async function crearEvaluacion(
   pacienteId: string,
@@ -101,6 +120,9 @@ export async function crearEvaluacion(
   const errorEvaluador = await validarEvaluador(d.evaluadorId, paciente.sedeId);
   if (errorEvaluador) return { error: errorEvaluador };
 
+  const tratamiento = await leerTratamiento(formData, paciente.sedeId);
+  if ("error" in tratamiento) return { error: tratamiento.error };
+
   // La ficha congela la plantilla con la que se aplicó: es un instrumento
   // fechado y firmado (ver src/lib/fichas/snapshot.ts).
   const { plantilla, version } = await obtenerPlantilla(user.centroId, "EVALUACION");
@@ -115,9 +137,12 @@ export async function crearEvaluacion(
         estructura: json(snapshotDe(plantilla)),
         valores: json(parseValores(formData, plantilla)),
         plantillaVersion: version,
-        programaRecomendado: d.programaRecomendado ?? null,
         recomendaciones: d.recomendaciones ?? null,
+        plazoSemanas: tratamiento.plazoSemanas,
       },
+    });
+    await tx.evaluacionTerapia.createMany({
+      data: filasTratamiento(ev.id, tratamiento.lineas),
     });
 
     // Quien se evalúa sin tener paquete vino a conocer el centro: entra a la
@@ -142,17 +167,6 @@ export async function crearEvaluacion(
     return ev;
   });
 
-  // Cambiar el programa del paciente es editar sus datos (permiso del terapeuta).
-  if (
-    d.aplicarPrograma &&
-    d.programaRecomendado &&
-    puede(user, "EDITAR_DATOS_PACIENTE")
-  ) {
-    await prisma.paciente.update({
-      where: { id: pacienteId },
-      data: { programa: d.programaRecomendado },
-    });
-  }
 
   revalidatePath(`/pacientes/${pacienteId}`);
   revalidatePath("/seguimiento");
@@ -200,16 +214,27 @@ export async function actualizarEvaluacion(
   // centro: corregir una evaluación no debe reinterpretarla con otra plantilla.
   const estructura = normalizarPlantilla(existente.estructura);
 
-  await prisma.evaluacion.update({
-    where: { id: evaluacionId },
-    data: {
-      evaluadorId: d.evaluadorId ?? null,
-      fecha: new Date(d.fecha),
-      valores: json(parseValores(formData, estructura)),
-      programaRecomendado: d.programaRecomendado ?? null,
-      recomendaciones: d.recomendaciones ?? null,
-    },
-  });
+  const tratamiento = await leerTratamiento(formData, existente.sedeId);
+  if ("error" in tratamiento) return { error: tratamiento.error };
+
+  // Los paquetes ya creados desde esta evaluación no cambian: copiaron el
+  // tratamiento al agendarse.
+  await prisma.$transaction([
+    prisma.evaluacion.update({
+      where: { id: evaluacionId },
+      data: {
+        evaluadorId: d.evaluadorId ?? null,
+        fecha: new Date(d.fecha),
+        valores: json(parseValores(formData, estructura)),
+        recomendaciones: d.recomendaciones ?? null,
+        plazoSemanas: tratamiento.plazoSemanas,
+      },
+    }),
+    prisma.evaluacionTerapia.deleteMany({ where: { evaluacionId } }),
+    prisma.evaluacionTerapia.createMany({
+      data: filasTratamiento(evaluacionId, tratamiento.lineas),
+    }),
+  ]);
 
   // Si se corrige el día de la ficha, su entrada de seguimiento lo acompaña.
   if (fechaInput(existente.fecha) !== d.fecha) {
@@ -220,17 +245,6 @@ export async function actualizarEvaluacion(
     revalidatePath("/seguimiento");
   }
 
-  // Cambiar el programa del paciente es editar sus datos (permiso del terapeuta).
-  if (
-    d.aplicarPrograma &&
-    d.programaRecomendado &&
-    puede(user, "EDITAR_DATOS_PACIENTE")
-  ) {
-    await prisma.paciente.update({
-      where: { id: existente.pacienteId },
-      data: { programa: d.programaRecomendado },
-    });
-  }
 
   revalidatePath(`/pacientes/${existente.pacienteId}`);
   redirect(`/pacientes/${existente.pacienteId}/evaluaciones/${evaluacionId}`);

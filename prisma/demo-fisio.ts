@@ -29,6 +29,7 @@ import {
   type Franja,
   type MetodoDemo,
   type PagoDemo,
+  lineaUnica,
 } from "./demo-util";
 
 const GRACIA_DIAS = 20;
@@ -170,7 +171,7 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
   await prisma.apoderado.deleteMany({ where: { paciente: enSedes } });
   await prisma.paciente.deleteMany({ where: enSedes });
   await prisma.terapeuta.deleteMany({ where: enSedes }); // vacaciones y especialidades en cascada
-  await prisma.programaTerapia.deleteMany({ where: enSedes });
+  await prisma.terapia.deleteMany({ where: enSedes });
   await prisma.feriado.deleteMany({ where: enSedes });
   await prisma.especialidad.deleteMany({ where: { centroId: fisio.id } });
 
@@ -212,25 +213,6 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
     ],
   });
 
-  /* ── Programas (duración de la sesión; Pilates es grupal) ── */
-  const programas: Record<string, { id: string; duracionMin: number }> = {};
-  for (const sede of [principal, surco]) {
-    for (const p of [
-      { nombre: "Rehabilitación traumatológica", duracionMin: 45, maxPacientes: 1 },
-      { nombre: "Terapia de columna", duracionMin: 45, maxPacientes: 1 },
-      { nombre: "Fisioterapia deportiva", duracionMin: 60, maxPacientes: 1 },
-      { nombre: "Rehabilitación neurológica", duracionMin: 60, maxPacientes: 1 },
-      { nombre: "Pilates terapéutico", duracionMin: 60, maxPacientes: 4 },
-    ]) {
-      const creado = await prisma.programaTerapia.create({ data: { ...p, sedeId: sede.id } });
-      programas[`${sede.id}|${p.nombre}`] = { id: creado.id, duracionMin: p.duracionMin };
-    }
-  }
-  // Un programa desactivado, para mostrar el estado en Configuración.
-  await prisma.programaTerapia.create({
-    data: { sedeId: principal.id, nombre: "Drenaje linfático", duracionMin: 45, activo: false },
-  });
-
   /* ── Especialidades y terapeutas ─────────────────────────── */
   const esp: Record<string, string> = {};
   for (const [nombre, activo] of [
@@ -247,6 +229,40 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
   }
   const especialidades = (...nombres: string[]) => ({
     especialidades: { create: nombres.map((n) => ({ especialidadId: esp[n] })) },
+  });
+
+  /* ── Terapias (especialidad, duración; Pilates es grupal) ── */
+  const programas: Record<string, { id: string; duracionMin: number }> = {};
+  for (const sede of [principal, surco]) {
+    for (const p of [
+      { nombre: "Rehabilitación traumatológica", especialidad: "Fisioterapia traumatológica", duracionMin: 45, maxParticipantes: 1 },
+      { nombre: "Terapia de columna", especialidad: "Terapia manual", duracionMin: 45, maxParticipantes: 1 },
+      { nombre: "Fisioterapia deportiva", especialidad: "Terapia deportiva", duracionMin: 60, maxParticipantes: 1 },
+      { nombre: "Rehabilitación neurológica", especialidad: "Rehabilitación neurológica", duracionMin: 60, maxParticipantes: 1 },
+      { nombre: "Pilates terapéutico", especialidad: "Pilates clínico", duracionMin: 60, maxParticipantes: 4 },
+    ]) {
+      const creado = await prisma.terapia.create({
+        data: {
+          sedeId: sede.id,
+          nombre: p.nombre,
+          especialidadId: esp[p.especialidad],
+          duracionMin: p.duracionMin,
+          modalidad: p.maxParticipantes > 1 ? "GRUPAL" : "INDIVIDUAL",
+          maxParticipantes: p.maxParticipantes,
+        },
+      });
+      programas[`${sede.id}|${p.nombre}`] = { id: creado.id, duracionMin: p.duracionMin };
+    }
+  }
+  // Una terapia desactivada, para mostrar el estado en Configuración.
+  await prisma.terapia.create({
+    data: {
+      sedeId: principal.id,
+      nombre: "Drenaje linfático",
+      especialidadId: esp["Terapia manual"],
+      duracionMin: 45,
+      activo: false,
+    },
   });
 
   const gabriela = await prisma.terapeuta.create({
@@ -457,7 +473,15 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
   ];
 
   const hoyClave = claveFecha(hoy());
-  const pacientes: Record<string, { id: string; sedeId: string }> = {};
+  // `tratamiento`: la terapia de su paquete, para sugerirla en su evaluación.
+  const pacientes: Record<
+    string,
+    {
+      id: string;
+      sedeId: string;
+      tratamiento?: { terapiaId: string; sesiones: number; sesionesSemana: number };
+    }
+  > = {};
   const resumen: string[] = [];
 
   /** Crea un paquete con sus sesiones y pagos. Devuelve el id del paquete. */
@@ -478,16 +502,20 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
       data: {
         sedeId: c.sede.id,
         pacienteId,
-        programaId: prog.id,
         totalSesiones: c.total,
-        frecuenciaSemana: c.horario.length,
-        horarioSemanal: c.horario.map((h) => ({ dia: h.dia, hora: h.hora })),
+        terapias: lineaUnica({
+          terapiaId: prog.id,
+          terapeutaId: c.terapeutaId,
+          totalSesiones: c.total,
+          horario: c.horario,
+        }),
         precio: c.precio,
         fechaInicio,
         fechaFin,
         estado: c.estado ?? "ACTIVO",
         observacion: c.nota ?? null,
       },
+      include: { terapias: { select: { id: true } } },
     });
 
     // Sesiones pasadas con asistencia (una falta y una tardanza sueltas).
@@ -513,7 +541,9 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
           sedeId: c.sede.id,
           pacienteId,
           terapeutaId: c.terapeutaId,
+          terapiaId: prog.id,
           paqueteId: paquete.id,
+          paqueteTerapiaId: paquete.terapias[0].id,
           numeroSesion: i + 1,
           fecha: s.fecha,
           horaInicio: s.horaInicio,
@@ -579,7 +609,15 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
           : undefined,
       },
     });
-    pacientes[c.nombres] = { id: paciente.id, sedeId: c.sede.id };
+    pacientes[c.nombres] = {
+      id: paciente.id,
+      sedeId: c.sede.id,
+      tratamiento: {
+        terapiaId: programas[`${c.sede.id}|${c.programa}`].id,
+        sesiones: c.total,
+        sesionesSemana: c.horario.length,
+      },
+    };
 
     const p = await paqueteCon(c, paciente.id, c.inicioHace);
     const cobro =
@@ -1033,9 +1071,11 @@ export async function sembrarFisioVida(prisma: PrismaClient, clave: string): Pro
         fecha: dia(-hace),
         plantillaVersion: 1,
         estructura: FISICA.EVALUACION as object,
-        programaRecomendado: "TERAPIAS",
         recomendaciones,
         valores: valores as object,
+        // Tratamiento sugerido: la terapia que luego se le agendó.
+        plazoSemanas: 4,
+        ...(p.tratamiento ? { tratamiento: { create: [p.tratamiento] } } : {}),
       },
     });
   }

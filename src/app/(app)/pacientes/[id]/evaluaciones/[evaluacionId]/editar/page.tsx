@@ -4,7 +4,6 @@ import {
   canAccessSede,
   requireAccesoClinico,
   evaluadorFijoDe,
-  puede,
   esAutorClinico,
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -16,6 +15,7 @@ import { FichaForm } from "@/components/ficha/ficha-form";
 import { actualizarEvaluacion } from "../../actions";
 import { CampoEvaluador } from "../../campo-evaluador";
 import { CierreEvaluacion } from "../../programa-recomendado";
+import { opcionesTerapia } from "../../terapias";
 
 export default async function EditarEvaluacionPage({
   params,
@@ -32,6 +32,10 @@ export default async function EditarEvaluacionPage({
       paciente: {
         select: { id: true, nombres: true, apellidoPaterno: true, apellidoMaterno: true },
       },
+      tratamiento: {
+        orderBy: { orden: "asc" },
+        select: { terapiaId: true, sesiones: true, sesionesSemana: true },
+      },
     },
   });
   if (
@@ -42,11 +46,17 @@ export default async function EditarEvaluacionPage({
     notFound();
   }
 
-  const terapeutas = await prisma.terapeuta.findMany({
-    where: { sedeId: evaluacion.sedeId, activo: true },
-    orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
-    select: { id: true, nombres: true, apellidos: true },
-  });
+  const [terapeutas, terapias] = await Promise.all([
+    prisma.terapeuta.findMany({
+      where: { sedeId: evaluacion.sedeId, activo: true },
+      orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
+      select: { id: true, nombres: true, apellidos: true },
+    }),
+    opcionesTerapia(
+      evaluacion.sedeId,
+      evaluacion.tratamiento.map((t) => t.terapiaId),
+    ),
+  ]);
 
   // Se edita con la plantilla CONGELADA en la ficha, no con la vigente del
   // centro: corregir una evaluación no debe reinterpretarla con otra escala.
@@ -83,9 +93,10 @@ export default async function EditarEvaluacionPage({
           }
           pie={
             <CierreEvaluacion
-              puedeAplicarPrograma={puede(user, "EDITAR_DATOS_PACIENTE")}
-              muestraPrograma={estructura.muestraProgramaRecomendado === true}
-              programaRecomendado={evaluacion.programaRecomendado}
+              borradorId={evaluacion.id}
+              terapias={terapias}
+              plazoSemanas={evaluacion.plazoSemanas}
+              tratamiento={evaluacion.tratamiento}
               recomendaciones={evaluacion.recomendaciones}
             />
           }

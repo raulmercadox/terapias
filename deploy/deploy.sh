@@ -146,8 +146,20 @@ if [ "$SCHEMA_CAMBIO" -eq 1 ]; then
   "${SSH[@]}" "cd '$APP_DIR' && npx prisma generate 2>&1 | tail -3"
 
   if [ "$RUN_MIGRATE" -eq 1 ]; then
+    # Las migraciones pueden transformar datos: antes, un volcado completo de
+    # la BD (formato custom, se restaura con pg_restore --clean).
+    say "Respaldando la base de datos"
+    "${SSH[@]}" "set -eo pipefail
+      cd '$APP_DIR'
+      DB_URL=\$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2- | tr -d '\"')
+      pg_dump \"\${DB_URL%%\\?*}\" -Fc -f '$BACKUP_DIR/db-$STAMP.dump'
+      ls -1t '$BACKUP_DIR'/db-*.dump | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --
+      echo \"  $BACKUP_DIR/db-$STAMP.dump (\$(du -h '$BACKUP_DIR/db-$STAMP.dump' | cut -f1))\"" \
+      || die "no se pudo respaldar la BD; NO se aplicaron migraciones (el código ya se sincronizó: revisa antes de reiniciar)"
+
     say "Aplicando migraciones (--migrate)"
-    "${SSH[@]}" "cd '$APP_DIR' && npx prisma migrate deploy 2>&1 | tail -10"
+    "${SSH[@]}" "set -o pipefail; cd '$APP_DIR' && npx prisma migrate deploy 2>&1 | tail -10" \
+      || die "la migración falló; NO se reinició el servicio. Restaura con: pg_restore --clean --if-exists -d <DATABASE_URL> $BACKUP_DIR/db-$STAMP.dump"
   else
     warn "Hay cambios en prisma/ pero NO se aplicaron migraciones."
     warn "Si hacen falta, vuelve a correr con --migrate (revisa el impacto antes)."

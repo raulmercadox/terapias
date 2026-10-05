@@ -1,59 +1,79 @@
-import { Card, Field, Select, Textarea } from "@/components/ui";
+"use client";
+
+import { useState } from "react";
+import { Card, Field, Textarea } from "@/components/ui";
+import {
+  TratamientoEditor,
+  tratamientoJSON,
+  type FilaTratamiento,
+  type TerapiaOpcion,
+} from "./tratamiento-editor";
+import { PLAZO_SEMANAS_DEFECTO } from "./tratamiento";
+
+type Estado = { plazo: string; filas: FilaTratamiento[] };
+
+// La FichaForm remonta su <form> (y con él este cierre) cuando la acción
+// devuelve un error; el borrador del tratamiento se guarda aquí, por ficha,
+// para no perder las filas ya cargadas.
+const borradores = new Map<string, Estado>();
 
 /**
- * Cierre de la ficha de evaluación. NO es parte de la plantilla.
- *
- * Las recomendaciones se piden SIEMPRE: son la conclusión del profesional y
- * valen en cualquier rubro. El programa recomendado, en cambio, solo aparece si
- * la plantilla lo pide (`muestraProgramaRecomendado`): sale de la ficha hacia
- * `Paciente.programa` y su dominio es el enum Programa, no texto libre, así que
- * un centro de terapia física no lo usa.
+ * Cierre de la ficha de evaluación. NO es parte de la plantilla: el
+ * tratamiento sugerido (terapias con sus sesiones en un plazo) sale de la
+ * ficha hacia el agendamiento de paquetes, y las recomendaciones son la
+ * conclusión del profesional en cualquier rubro.
  */
 export function CierreEvaluacion({
-  muestraPrograma,
-  programaRecomendado,
+  borradorId,
+  terapias,
+  plazoSemanas,
+  tratamiento,
   recomendaciones,
-  puedeAplicarPrograma = true,
 }: {
-  muestraPrograma: boolean;
-  /** Cambiar el programa del paciente es editar sus datos (permiso del terapeuta). */
-  puedeAplicarPrograma?: boolean;
-  programaRecomendado?: string | null;
+  /** Identifica la ficha (p. ej. "nueva-<pacienteId>" o el id de la evaluación). */
+  borradorId: string;
+  terapias: TerapiaOpcion[];
+  plazoSemanas?: number;
+  tratamiento?: { terapiaId: string; sesiones: number; sesionesSemana: number }[];
   recomendaciones?: string | null;
 }) {
+  const [estado, setEstado] = useState<Estado>(
+    () =>
+      borradores.get(borradorId) ?? {
+        plazo: String(plazoSemanas ?? PLAZO_SEMANAS_DEFECTO),
+        filas: (tratamiento ?? []).map((t, i) => ({
+          clave: i + 1,
+          terapiaId: t.terapiaId,
+          sesiones: String(t.sesiones),
+          sesionesSemana: String(t.sesionesSemana),
+          semanaManual: true,
+        })),
+      },
+  );
+  function actualizar(cambio: Partial<Estado>) {
+    setEstado((prev) => {
+      const nuevo = { ...prev, ...cambio };
+      borradores.set(borradorId, nuevo);
+      return nuevo;
+    });
+  }
+
   return (
     <Card>
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        {muestraPrograma ? "Resultado: programa recomendado" : "Recomendaciones"}
+        Tratamiento sugerido
       </h2>
-
-      {muestraPrograma ? (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Programa recomendado">
-              <Select name="programaRecomendado" defaultValue={programaRecomendado ?? ""}>
-                <option value="">— Seleccione —</option>
-                <option value="ESCOLAR">Escolar</option>
-                <option value="INTERDIARIO">Terapias Grupales</option>
-                <option value="TERAPIAS">Terapia Individual</option>
-              </Select>
-            </Field>
-            <Field label="Recomendaciones">
-              <Textarea name="recomendaciones" defaultValue={recomendaciones ?? ""} />
-            </Field>
-          </div>
-          {puedeAplicarPrograma && (
-            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="aplicarPrograma" />
-              Actualizar el programa del paciente con el recomendado al guardar
-            </label>
-          )}
-        </>
-      ) : (
-        <Field label="Conclusiones y plan sugerido">
-          <Textarea name="recomendaciones" rows={5} defaultValue={recomendaciones ?? ""} />
-        </Field>
-      )}
+      <input type="hidden" name="tratamiento" value={tratamientoJSON(estado.filas)} />
+      <TratamientoEditor
+        terapias={terapias}
+        plazo={estado.plazo}
+        onPlazo={(plazo) => actualizar({ plazo })}
+        filas={estado.filas}
+        onFilas={(filas) => actualizar({ filas })}
+      />
+      <Field label="Recomendaciones" className="mt-6">
+        <Textarea name="recomendaciones" rows={4} defaultValue={recomendaciones ?? ""} />
+      </Field>
     </Card>
   );
 }

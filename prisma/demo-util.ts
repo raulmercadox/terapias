@@ -138,3 +138,27 @@ export function creadorDePagos(prisma: PrismaClient) {
     });
   };
 }
+
+/* ── Paquetes ────────────────────────────────────────────── */
+
+/**
+ * La terapia (línea) de un paquete de demo con una sola terapia, para
+ * `paquete.create({ data: { terapias: lineaUnica(...) } })`. Sus sesiones
+ * deben llevar `terapiaId` y el `paqueteTerapiaId` de esta línea.
+ */
+export function lineaUnica(o: {
+  terapiaId: string;
+  terapeutaId: string;
+  totalSesiones: number;
+  horario: { dia: number; hora: string }[];
+}) {
+  return {
+    create: {
+      terapiaId: o.terapiaId,
+      terapeutaId: o.terapeutaId,
+      totalSesiones: o.totalSesiones,
+      frecuenciaSemana: Math.max(1, o.horario.length),
+      horarioSemanal: o.horario.map((h) => ({ dia: h.dia, hora: h.hora })),
+    },
+  };
+}

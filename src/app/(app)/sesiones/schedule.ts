@@ -72,7 +72,9 @@ export function construirSesiones(opts: {
   sedeId: string;
   pacienteId: string;
   paqueteId: string;
+  paqueteTerapiaId: string;
   terapeutaId: string | null;
+  terapiaId: string | null;
   totalSesiones: number;
   horario: HorarioDia[];
   duracionMin: number;
@@ -85,7 +87,9 @@ export function construirSesiones(opts: {
     sedeId: opts.sedeId,
     pacienteId: opts.pacienteId,
     terapeutaId: opts.terapeutaId,
+    terapiaId: opts.terapiaId,
     paqueteId: opts.paqueteId,
+    paqueteTerapiaId: opts.paqueteTerapiaId,
     numeroSesion: i + 1,
     fecha: s.fecha,
     horaInicio: s.horaInicio,

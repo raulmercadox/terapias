@@ -13,7 +13,13 @@ import {
   assertPermiso,
   terapeutaDe,
 } from "@/lib/session";
-import { cupoTerapeuta, conflictoPaciente } from "@/lib/conflictos";
+import {
+  cupoTerapeuta,
+  conflictoPaciente,
+  mensajeCupo,
+  SELECT_TERAPIA_CUPO,
+} from "@/lib/conflictos";
+import type { TerapiaCupo } from "@/app/(app)/sesiones/disponibilidad";
 import { motivoFueraDeHorario } from "../sesiones/horario";
 import { fecha as fmtFecha, hoyLima, sumarMinutos } from "@/lib/utils";
 import { TIPO_LABEL } from "./helpers";
@@ -43,7 +49,8 @@ async function validarFranjaCita(params: {
   horaFin: string;
   terapeutaId: string | null;
   pacienteId: string;
-  maxPacientes: number;
+  /** Terapia de la cita (null = cita suelta: franja exclusiva). */
+  terapia: TerapiaCupo | null;
   exceptCitaId?: string;
 }): Promise<string | null> {
   const {
@@ -53,7 +60,7 @@ async function validarFranjaCita(params: {
     horaFin,
     terapeutaId,
     pacienteId,
-    maxPacientes,
+    terapia,
     exceptCitaId,
   } = params;
 
@@ -125,17 +132,11 @@ async function validarFranjaCita(params: {
       fecha,
       horaInicio,
       horaFin,
-      maxPacientes,
+      terapia,
       nuevoPacienteId: pacienteId,
       exceptCitaId,
     });
-    if (cupo.excede && cupo.ejemplo) {
-      const ej = cupo.ejemplo;
-      if (maxPacientes <= 1) {
-        return `El terapeuta ya tiene una cita el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin} (${ej.pacienteNombre}).`;
-      }
-      return `El terapeuta ya alcanzó el cupo máximo (${maxPacientes}) el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin}.`;
-    }
+    if (cupo.excede) return mensajeCupo(cupo, terapia);
   }
 
   return null;
@@ -217,8 +218,8 @@ export async function crearCita(
     horaFin: data.horaFin,
     terapeutaId,
     pacienteId: data.pacienteId,
-    // Las citas manuales no pertenecen a un programa: cupo individual (1).
-    maxPacientes: 1,
+    // Las citas manuales no tienen terapia: franja exclusiva.
+    terapia: null,
   });
   if (err) return { error: err };
 
@@ -258,7 +259,7 @@ export async function actualizarCita(
       pacienteId: true,
       terapeutaId: true,
       tipo: true,
-      paquete: { select: { programa: { select: { maxPacientes: true } } } },
+      terapia: { select: SELECT_TERAPIA_CUPO },
     },
   });
   if (!cita) return { error: "Cita no encontrada." };
@@ -316,7 +317,7 @@ export async function actualizarCita(
     horaFin: data.horaFin,
     terapeutaId,
     pacienteId: data.pacienteId,
-    maxPacientes: cita.paquete?.programa?.maxPacientes ?? 1,
+    terapia: cita.terapia,
     exceptCitaId: id,
   });
   if (err) return { error: err };
@@ -565,7 +566,7 @@ export async function crearCitaRapida(
     terapeutaId,
     // Un paciente nuevo aún no tiene citas con qué chocar.
     pacienteId: d.pacienteNuevo ? "" : d.pacienteId,
-    maxPacientes: 1,
+    terapia: null,
   });
   if (err) return { error: err };
 

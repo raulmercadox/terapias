@@ -33,9 +33,9 @@ export default async function ConfiguracionPage() {
       icon: "🎓",
     },
     {
-      label: "Programas",
-      descripcion: "Programas de terapia y la duración de sus sesiones.",
-      href: "/configuracion/programas",
+      label: "Terapias",
+      descripcion: "Terapias por sede: especialidad e individual o grupal.",
+      href: "/configuracion/terapias",
       icon: "🧩",
     },
     {

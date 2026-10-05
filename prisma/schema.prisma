@@ -250,7 +250,7 @@ model Sede {
   paquetes          Paquete[]
   citas             Cita[]
   pagos             Pago[]
-  programas         ProgramaTerapia[]
+  terapias          Terapia[]
   feriados          Feriado[]
   evaluaciones      Evaluacion[]
   historiasClinicas HistoriaClinica[]
@@ -305,8 +305,8 @@ model Terapeuta {
   activo           Boolean  @default(true)
   // Refrigerio propio (opcional): si está configurado reemplaza al de la sede
   // para este terapeuta. Ambos campos van juntos (los dos con valor o null).
-  refrigerioInicio String? // "HH:mm"
-  refrigerioFin    String? // "HH:mm"
+  refrigerioInicio   String? // "HH:mm"
+  refrigerioFin      String? // "HH:mm"
   // Firma dibujada por el propio terapeuta: PNG como data URL. Va en la BD y
   // no en disco porque el deploy sincroniza con rsync --delete.
   firma              String?   @db.Text
@@ -320,6 +320,7 @@ model Terapeuta {
   informesAvance InformeAvance[]
   vacaciones     VacacionTerapeuta[]
   especialidades TerapeutaEspecialidad[]
+  paquetes       PaqueteTerapia[]
   usuario        User?
 
   @@index([sedeId])
@@ -337,6 +338,7 @@ model Especialidad {
 
   centro     Centro                  @relation(fields: [centroId], references: [id], onDelete: Cascade)
   terapeutas TerapeutaEspecialidad[]
+  terapias   Terapia[]
 
   @@unique([centroId, nombre])
 }
@@ -417,16 +419,38 @@ model Evaluacion {
   programaRecomendado Programa?
   recomendaciones     String?
 
+  // Tratamiento sugerido: terapias con sus sesiones dentro del plazo.
+  plazoSemanas Int @default(4)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sede        Sede         @relation(fields: [sedeId], references: [id])
-  paciente    Paciente     @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
-  evaluador   Terapeuta?   @relation(fields: [evaluadorId], references: [id])
+  sede        Sede                @relation(fields: [sedeId], references: [id])
+  paciente    Paciente            @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  evaluador   Terapeuta?          @relation(fields: [evaluadorId], references: [id])
   interaccion Interaccion?
+  tratamiento EvaluacionTerapia[]
+  paquetes    Paquete[]
 
   @@index([pacienteId, fecha])
   @@index([sedeId])
+}
+
+// Una terapia del tratamiento sugerido en la evaluación: cuántas sesiones en
+// el plazo de la evaluación y cuántas por semana.
+model EvaluacionTerapia {
+  id             String @id @default(cuid())
+  evaluacionId   String
+  terapiaId      String
+  sesiones       Int
+  sesionesSemana Int
+  orden          Int    @default(0)
+
+  evaluacion Evaluacion @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
+  terapia    Terapia    @relation(fields: [terapiaId], references: [id])
+
+  @@unique([evaluacionId, terapiaId])
+  @@index([terapiaId])
 }
 
 // Historia Clínica: única por paciente. Su estructura ya no vive en columnas
@@ -503,31 +527,55 @@ model Apoderado {
 // ─────────────────────────────────────────────────────────────
 
 model Paquete {
-  id               String        @id @default(cuid())
-  sedeId           String
-  pacienteId       String
-  programaId       String?
-  totalSesiones    Int           @default(12)
-  frecuenciaSemana Int           @default(3)
-  // Plantilla del horario semanal: [{ "dia": 1, "hora": "09:00" }, ...] (para renovar).
-  horarioSemanal   Json?
-  precio           Decimal       @db.Decimal(10, 2)
-  fechaInicio      DateTime?
-  fechaFin         DateTime?
-  estado           EstadoPaquete @default(ACTIVO)
-  observacion      String?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  sedeId        String
+  pacienteId    String
+  // Evaluación de la que sale el tratamiento (null en paquetes anteriores).
+  evaluacionId  String?
+  // Suma de las sesiones de sus terapias.
+  totalSesiones Int           @default(12)
+  precio        Decimal       @db.Decimal(10, 2)
+  fechaInicio   DateTime?
+  fechaFin      DateTime?
+  estado        EstadoPaquete @default(ACTIVO)
+  observacion   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  sede     Sede             @relation(fields: [sedeId], references: [id])
-  paciente Paciente         @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
-  programa ProgramaTerapia? @relation(fields: [programaId], references: [id])
-  citas    Cita[]
-  pagos    Pago[]
+  sede       Sede             @relation(fields: [sedeId], references: [id])
+  paciente   Paciente         @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  evaluacion Evaluacion?      @relation(fields: [evaluacionId], references: [id], onDelete: SetNull)
+  terapias   PaqueteTerapia[]
+  citas      Cita[]
+  pagos      Pago[]
 
   @@index([sedeId])
   @@index([pacienteId])
-  @@index([programaId])
+  @@index([evaluacionId])
+}
+
+// Una terapia del paquete: quién la atiende y cuántas sesiones. Las sesiones
+// (Citas) de la línea apuntan aquí.
+model PaqueteTerapia {
+  id               String  @id @default(cuid())
+  paqueteId        String
+  // Null solo en paquetes anteriores al catálogo de terapias.
+  terapiaId        String?
+  terapeutaId      String?
+  totalSesiones    Int
+  frecuenciaSemana Int     @default(1)
+  // Plantilla del horario semanal: [{ "dia": 1, "hora": "09:00" }, ...] (para renovar).
+  horarioSemanal   Json?
+  orden            Int     @default(0)
+
+  paquete   Paquete    @relation(fields: [paqueteId], references: [id], onDelete: Cascade)
+  terapia   Terapia?   @relation(fields: [terapiaId], references: [id])
+  terapeuta Terapeuta? @relation(fields: [terapeutaId], references: [id])
+  citas     Cita[]
+
+  @@index([paqueteId])
+  @@index([terapiaId])
+  @@index([terapeutaId])
 }
 
 model Cita {
@@ -536,6 +584,9 @@ model Cita {
   pacienteId          String
   terapeutaId         String?
   paqueteId           String?
+  paqueteTerapiaId    String?
+  // Terapia de la sesión: define si la franja se comparte (grupal) o no.
+  terapiaId           String?
   numeroSesion        Int?
   fecha               DateTime
   horaInicio          String // "09:00"
@@ -549,16 +600,20 @@ model Cita {
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
-  sede          Sede                @relation(fields: [sedeId], references: [id])
-  paciente      Paciente            @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
-  terapeuta     Terapeuta?          @relation(fields: [terapeutaId], references: [id])
-  paquete       Paquete?            @relation(fields: [paqueteId], references: [id], onDelete: SetNull)
-  observaciones ObservacionSesion[]
+  sede           Sede                @relation(fields: [sedeId], references: [id])
+  paciente       Paciente            @relation(fields: [pacienteId], references: [id], onDelete: Cascade)
+  terapeuta      Terapeuta?          @relation(fields: [terapeutaId], references: [id])
+  paquete        Paquete?            @relation(fields: [paqueteId], references: [id], onDelete: SetNull)
+  paqueteTerapia PaqueteTerapia?     @relation(fields: [paqueteTerapiaId], references: [id], onDelete: SetNull)
+  terapia        Terapia?            @relation(fields: [terapiaId], references: [id])
+  observaciones  ObservacionSesion[]
 
   @@index([sedeId, fecha])
   @@index([pacienteId])
   @@index([terapeutaId, fecha])
   @@index([paqueteId])
+  @@index([paqueteTerapiaId])
+  @@index([terapiaId])
 }
 
 // Historial inmutable de observaciones del seguimiento de la sesión.
@@ -579,25 +634,33 @@ model ObservacionSesion {
 // Configuración de agenda por sede: programas y feriados
 // ─────────────────────────────────────────────────────────────
 
-// Programa de terapia configurable por sede. Define la duración de sus sesiones.
+// Terapia que ofrece una sede. Cada una pertenece a una especialidad, es
+// individual o grupal y define la duración de sus sesiones.
 // (Independiente del enum Programa usado en Paciente.)
-model ProgramaTerapia {
-  id           String   @id @default(cuid())
-  sedeId       String
-  nombre       String
-  duracionMin  Int      @default(45)
-  // Cupo máximo de pacientes por franja (terapeuta + día + hora).
-  // 1 = terapia individual; >1 = terapia grupal.
-  maxPacientes Int      @default(1)
-  activo       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+model Terapia {
+  id               String           @id @default(cuid())
+  sedeId           String
+  nombre           String
+  // Obligatoria al crear/editar; null solo en terapias anteriores al catálogo.
+  especialidadId   String?
+  modalidad        ModalidadTerapia @default(INDIVIDUAL)
+  // Duración de cada sesión (min). Define la grilla al agendar.
+  duracionMin      Int              @default(45)
+  // Participantes por franja (terapeuta + día + hora). 1 si es individual.
+  maxParticipantes Int              @default(1)
+  activo           Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  sede     Sede      @relation(fields: [sedeId], references: [id])
-  paquetes Paquete[]
+  sede         Sede                @relation(fields: [sedeId], references: [id])
+  especialidad Especialidad?       @relation(fields: [especialidadId], references: [id])
+  paquetes     PaqueteTerapia[]
+  citas        Cita[]
+  tratamientos EvaluacionTerapia[]
 
   @@unique([sedeId, nombre])
   @@index([sedeId])
+  @@index([especialidadId])
 }
 
 // Vacaciones de un terapeuta: rango de días (ambos extremos incluidos) en los
@@ -630,6 +693,11 @@ model Feriado {
 }
 
 // ─────────────────────────────────────────────────────────────
+enum ModalidadTerapia {
+  INDIVIDUAL
+  GRUPAL
+}
+
 // Pagos y Recibos internos
 // ─────────────────────────────────────────────────────────────
 

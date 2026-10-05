@@ -6,9 +6,10 @@ import {
   getCentro,
   requireAccesoClinico,
   esAutorClinico,
+  esTerapeuta,
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { PageHeader, Card, Badge, ButtonLink } from "@/components/ui";
+import { PageHeader, Card, ButtonLink } from "@/components/ui";
 import { nombreCompleto, edad, fecha } from "@/lib/utils";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { normalizarPlantilla } from "@/lib/fichas/plantilla";
@@ -18,12 +19,6 @@ import { FichaVista, Dato } from "@/components/ficha/ficha-vista";
 import { ImprimirBoton } from "@/components/imprimir-boton";
 import { EliminarEvaluacionBoton } from "./eliminar-boton";
 import { ActualizarPlantillaBoton } from "./actualizar-plantilla-boton";
-
-const PROGRAMA_LABEL: Record<string, string> = {
-  ESCOLAR: "Escolar",
-  INTERDIARIO: "Terapias Grupales",
-  TERAPIAS: "Terapia Individual",
-};
 
 const SEXO_LABEL: Record<string, string> = {
   M: "Masculino",
@@ -44,6 +39,20 @@ export default async function EvaluacionDetallePage({
     include: {
       paciente: true,
       evaluador: { select: { nombres: true, apellidos: true } },
+      tratamiento: {
+        orderBy: { orden: "asc" },
+        include: {
+          terapia: {
+            select: {
+              nombre: true,
+              modalidad: true,
+              maxParticipantes: true,
+              duracionMin: true,
+              especialidad: { select: { nombre: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (
@@ -80,12 +89,6 @@ export default async function EvaluacionDetallePage({
           subtitle={`${nombreCompleto(p)} · Evaluación del ${fecha(evaluacion.fecha)}`}
           actions={
             <>
-              {evaluacion.programaRecomendado && (
-                <Badge color="sky">
-                  {PROGRAMA_LABEL[evaluacion.programaRecomendado] ??
-                    evaluacion.programaRecomendado}
-                </Badge>
-              )}
               <ButtonLink href={`/pacientes/${p.id}`} variant="secondary">
                 Volver al paciente
               </ButtonLink>
@@ -163,34 +166,47 @@ export default async function EvaluacionDetallePage({
           }
         />
 
-        {/* Las recomendaciones cierran la ficha en cualquier rubro; el programa
-            recomendado solo si la plantilla lo usa. */}
+        {/* Cierre de la ficha (fuera de la plantilla): tratamiento sugerido y
+            recomendaciones. */}
         <Card>
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            {estructura.muestraProgramaRecomendado
-              ? "Resultado: programa recomendado"
-              : "Recomendaciones"}
+            Tratamiento sugerido · {evaluacion.plazoSemanas} semana(s)
           </h2>
-          <dl className="grid gap-4 sm:grid-cols-2">
-            {estructura.muestraProgramaRecomendado && (
-              <Dato
-                label="Programa recomendado"
-                value={
-                  evaluacion.programaRecomendado
-                    ? (PROGRAMA_LABEL[evaluacion.programaRecomendado] ??
-                      evaluacion.programaRecomendado)
-                    : null
-                }
-              />
-            )}
-            <Dato
-              label={
-                estructura.muestraProgramaRecomendado
-                  ? "Recomendaciones"
-                  : "Conclusiones y plan sugerido"
-              }
-              value={evaluacion.recomendaciones}
-            />
+          {evaluacion.tratamiento.length === 0 ? (
+            <p className="text-sm text-slate-500">La evaluación no sugiere terapias.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {evaluacion.tratamiento.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                >
+                  <span>
+                    <span className="font-medium text-slate-900">{t.terapia.nombre}</span>
+                    <span className="text-slate-500">
+                      {t.terapia.especialidad ? ` · ${t.terapia.especialidad.nombre}` : ""}
+                      {` · ${t.terapia.duracionMin} min`}
+                      {t.terapia.modalidad === "GRUPAL"
+                        ? ` · Grupal (máx. ${t.terapia.maxParticipantes})`
+                        : " · Individual"}
+                    </span>
+                  </span>
+                  <span className="text-slate-700">
+                    {t.sesiones} sesiones · {t.sesionesSemana} por semana
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {evaluacion.tratamiento.length > 0 && !esTerapeuta(user) && (
+            <div className="no-print mt-4">
+              <ButtonLink href={`/sesiones/nuevo?evaluacion=${evaluacion.id}`}>
+                Programar paquete
+              </ButtonLink>
+            </div>
+          )}
+          <dl className="mt-4 border-t border-slate-100 pt-4">
+            <Dato label="Recomendaciones" value={evaluacion.recomendaciones} />
           </dl>
         </Card>
       </div>

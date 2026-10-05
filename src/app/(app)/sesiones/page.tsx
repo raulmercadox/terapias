@@ -103,7 +103,10 @@ export default async function SesionesPage({
       select: {
         id: true,
         totalSesiones: true,
-        frecuenciaSemana: true,
+        terapias: {
+          orderBy: { orden: "asc" },
+          select: { terapia: { select: { nombre: true } } },
+        },
         precio: true,
         fechaInicio: true,
         fechaFin: true,
@@ -167,7 +170,14 @@ export default async function SesionesPage({
       <PageHeader
         title="Paquetes de sesiones"
         subtitle="Terapias vendidas por paquetes para la sede activa."
-        actions={<ButtonLink href="/sesiones/nuevo">Nuevo paquete</ButtonLink>}
+        actions={
+          // Desde la ficha del paciente el paquete nuevo ya lo trae elegido.
+          <ButtonLink
+            href={`/sesiones/nuevo${pacienteFiltrado ? `?pacienteId=${pacienteFiltrado.id}` : ""}`}
+          >
+            Nuevo paquete
+          </ButtonLink>
+        }
       />
 
       {pacienteFiltrado ? (
@@ -280,12 +290,14 @@ export default async function SesionesPage({
                 <tr key={p.id} className="hover:bg-slate-50">
                   <Td className="font-medium text-slate-900">
                     {nombreCompleto(p.paciente)}
+                    {p.terapias.length > 0 && (
+                      <span className="block text-xs font-normal text-slate-400">
+                        {p.terapias.map((l) => l.terapia?.nombre ?? "Terapia").join(", ")}
+                      </span>
+                    )}
                   </Td>
                   <Td>
                     {usadas} / {p.totalSesiones}
-                    <span className="ml-1 text-xs text-slate-400">
-                      ({p.frecuenciaSemana}×sem)
-                    </span>
                   </Td>
                   <Td>{restantes}</Td>
                   {veMontos && <Td>{soles(p.precio)}</Td>}

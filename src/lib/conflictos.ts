@@ -1,4 +1,10 @@
 import type { Prisma } from "@prisma/client";
+import { fecha } from "@/lib/utils";
+import {
+  evaluarCupo,
+  type EstadoCupo,
+  type TerapiaCupo,
+} from "@/app/(app)/sesiones/disponibilidad";
 
 /** Cliente Prisma o cliente de transacción (ambos exponen `.cita`). */
 type DbClient = Prisma.TransactionClient;
@@ -62,25 +68,20 @@ export async function conflictoPaciente(
 export type CupoResultado = {
   /** Pacientes distintos (≠ nuevoPacienteId) ya asignados al terapeuta en esa franja. */
   ocupados: number;
-  /** true si agregar al paciente superaría `maxPacientes`. */
+  /** true si el paciente no puede tomar la franja con ese terapeuta. */
   excede: boolean;
+  /** "ocupado" = sesión no compartible; "lleno" = grupal sin cupo. */
+  estado: EstadoCupo;
   /** Una cita de ejemplo en la franja (para construir el mensaje). */
   ejemplo?: CitaOcupada;
 };
 
 /**
- * Evalúa el cupo de un terapeuta en una franja (misma fecha + rango horario).
- *
- * En el centro un terapeuta puede dirigir un programa con varios pacientes en
- * la misma franja (distintos ambientes), hasta `maxPacientes` (cupo del
- * programa). Cuenta los pacientes DISTINTOS ya asignados al terapeuta cuyas
- * citas se cruzan con [horaInicio, horaFin) ese día (estado != CANCELADA),
- * excluyendo opcionalmente una cita (`exceptCitaId`). El paciente que se va a
- * asignar (`nuevoPacienteId`) se suma una sola vez; hay exceso si el total de
- * pacientes distintos supera `maxPacientes`.
- *
- * Solapamiento = aInicio < bFin && aFin > bInicio (comparación lexicográfica de
- * "HH:mm", válida con formato 24h y ceros a la izquierda).
+ * Evalúa si el terapeuta puede atender al paciente en una franja (misma fecha
+ * + rango horario), con la regla de `evaluarCupo`: solo una terapia GRUPAL
+ * comparte la franja, con citas de la misma terapia y el mismo horario, hasta
+ * `maxParticipantes`. `terapia` null = cita suelta (franja exclusiva).
+ * Considera las citas no canceladas del día, excepto `exceptCitaId`.
  */
 export async function cupoTerapeuta(
   db: DbClient,
@@ -89,7 +90,7 @@ export async function cupoTerapeuta(
     fecha: Date;
     horaInicio: string;
     horaFin: string;
-    maxPacientes: number;
+    terapia: TerapiaCupo | null;
     nuevoPacienteId?: string;
     exceptCitaId?: string;
   },
@@ -99,7 +100,7 @@ export async function cupoTerapeuta(
     fecha,
     horaInicio,
     horaFin,
-    maxPacientes,
+    terapia,
     nuevoPacienteId,
     exceptCitaId,
   } = params;
@@ -123,38 +124,50 @@ export async function cupoTerapeuta(
       horaInicio: true,
       horaFin: true,
       pacienteId: true,
+      terapiaId: true,
       paciente: { select: { nombres: true, apellidoPaterno: true } },
     },
     orderBy: { horaInicio: "asc" },
   });
 
-  const cruces = candidatas.filter(
-    (c) => horaInicio < c.horaFin && horaFin > c.horaInicio,
-  );
-
-  // Pacientes distintos ya en la franja, sin contar al propio paciente nuevo.
-  const otros = new Set<string>();
-  for (const c of cruces) {
-    if (nuevoPacienteId && c.pacienteId === nuevoPacienteId) continue;
-    otros.add(c.pacienteId);
-  }
-
-  const total = otros.size + (nuevoPacienteId ? 1 : 0);
-  const primera = cruces[0];
+  const r = evaluarCupo(candidatas, { horaInicio, horaFin }, terapia, nuevoPacienteId);
+  const ej = r.ejemplo;
 
   return {
-    ocupados: otros.size,
-    excede: total > maxPacientes,
-    ejemplo: primera
+    ocupados: r.ocupados,
+    estado: r.estado,
+    excede: r.estado === "ocupado" || r.estado === "lleno",
+    ejemplo: ej
       ? {
-          id: primera.id,
-          fecha: primera.fecha,
-          horaInicio: primera.horaInicio,
-          horaFin: primera.horaFin,
-          pacienteId: primera.pacienteId,
+          id: ej.id,
+          fecha: ej.fecha,
+          horaInicio: ej.horaInicio,
+          horaFin: ej.horaFin,
+          pacienteId: ej.pacienteId,
           pacienteNombre:
-            `${primera.paciente.nombres} ${primera.paciente.apellidoPaterno}`.trim(),
+            `${ej.paciente.nombres} ${ej.paciente.apellidoPaterno}`.trim(),
         }
       : undefined,
   };
+}
+
+/** Terapia con la forma que pide `cupoTerapeuta` (o null). */
+export const SELECT_TERAPIA_CUPO = {
+  id: true,
+  modalidad: true,
+  maxParticipantes: true,
+} as const;
+
+/** Mensaje legible cuando el terapeuta no puede tomar la franja. */
+export function mensajeCupo(
+  cupo: CupoResultado,
+  terapia: TerapiaCupo | null,
+): string {
+  const ej = cupo.ejemplo;
+  if (!ej) return "El terapeuta no tiene disponibilidad en esa franja.";
+  const dia = fecha(ej.fecha);
+  if (cupo.estado === "lleno" && terapia) {
+    return `El grupo ya está completo (${terapia.maxParticipantes} participantes) el ${dia} de ${ej.horaInicio} a ${ej.horaFin}.`;
+  }
+  return `El terapeuta ya tiene una sesión el ${dia} de ${ej.horaInicio} a ${ej.horaFin} (${ej.pacienteNombre}).`;
 }

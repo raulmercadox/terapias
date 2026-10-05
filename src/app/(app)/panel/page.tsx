@@ -14,6 +14,7 @@ import { Badge, Card, EmptyState } from "@/components/ui";
 import { nombreCompleto, soles } from "@/lib/utils";
 import { contarPendientes } from "../seguimiento/consultas";
 import { cobranzaDeSede } from "../pagos/consultas-cobranza";
+import { WHERE_ES_PACIENTE, WHERE_ES_POTENCIAL } from "@/lib/tipo-paciente";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -42,8 +43,16 @@ export default async function DashboardPage() {
   const vePacientes = user.rol !== "USUARIO";
   const vePagos = puedeVerPagos(user);
 
-  const [pacientes, porContactar, citasHoy, paquetesActivos, ingresosMes, cobranza] = await Promise.all([
-    prisma.paciente.count({ where: { sedeId, estado: "ACTIVO" } }),
+  const [pacientes, potenciales, porContactar, citasHoy, paquetesActivos, ingresosMes, cobranza] = await Promise.all([
+    // Pacientes = ya en terapia; potenciales = evaluados que aún no empiezan.
+    prisma.paciente.count({
+      where: { sedeId, estado: "ACTIVO", AND: [WHERE_ES_PACIENTE] },
+    }),
+    vePacientes
+      ? prisma.paciente.count({
+          where: { sedeId, estado: "ACTIVO", AND: [WHERE_ES_POTENCIAL] },
+        })
+      : 0,
     vePacientes ? contarPendientes(sedeId) : 0,
     prisma.cita.count({
       where: { sedeId, fecha: { gte: hoyInicio, lte: hoyFin } },
@@ -62,6 +71,12 @@ export default async function DashboardPage() {
     ...(vePacientes
       ? [
           { label: "Pacientes activos", value: pacientes, href: "/pacientes", icon: "🧒" },
+          {
+            label: "Potenciales",
+            value: potenciales,
+            href: "/pacientes?tipo=potenciales",
+            icon: "🌱",
+          },
           { label: "Interesados por contactar", value: porContactar, href: "/seguimiento", icon: "📞" },
         ]
       : []),
@@ -164,7 +179,11 @@ async function InicioTerapeuta({
       },
     }),
     prisma.paciente.count({
-      where: { sedeId, estado: "ACTIVO", ...whereMisPacientes(user) },
+      where: {
+        sedeId,
+        estado: "ACTIVO",
+        AND: [whereMisPacientes(user), WHERE_ES_PACIENTE],
+      },
     }),
   ]);
 

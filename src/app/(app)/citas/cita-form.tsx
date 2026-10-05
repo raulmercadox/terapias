@@ -23,11 +23,14 @@ export function CitaForm({
   terapeutas,
   inicial,
   fechaPorDefecto,
+  pacientePorDefecto,
 }: {
   pacientes: Opcion[];
   terapeutas: Opcion[];
   inicial?: CitaInicial;
   fechaPorDefecto?: string;
+  /** Paciente preseleccionado al crear (p. ej. llegando desde su ficha). */
+  pacientePorDefecto?: string;
 }) {
   const editando = Boolean(inicial);
   const action = editando ? actualizarCita : crearCita;
@@ -52,7 +55,7 @@ export function CitaForm({
           name="pacienteId"
           required
           options={pacientes}
-          defaultValue={valor("pacienteId", inicial?.pacienteId ?? "")}
+          defaultValue={valor("pacienteId", inicial?.pacienteId ?? pacientePorDefecto ?? "")}
           placeholder="Seleccione un paciente…"
         />
       </Field>

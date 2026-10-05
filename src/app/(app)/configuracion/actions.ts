@@ -633,78 +633,103 @@ export async function guardarEspecialidad(
 }
 
 /* ════════════════════════════════════════════════════════
- * PROGRAMAS (configurables por sede, con duración de sesión)
+ * TERAPIAS (por sede: especialidad e individual/grupal)
  * ════════════════════════════════════════════════════════ */
 
 const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-const programaSchema = z.object({
-  sedeId: z.string().min(1, "La sede es obligatoria."),
-  nombre: z.string().trim().min(1, "El nombre es obligatorio."),
-  duracionMin: z.coerce
-    .number()
-    .int("La duración debe ser un número entero.")
-    .min(5, "Mínimo 5 minutos.")
-    .max(480, "Máximo 480 minutos."),
-  maxPacientes: z.coerce
-    .number()
-    .int("El cupo debe ser un número entero.")
-    .min(1, "Mínimo 1 paciente.")
-    .max(50, "Máximo 50 pacientes."),
-  activo: z.boolean(),
-});
+const terapiaSchema = z
+  .object({
+    sedeId: z.string().min(1, "La sede es obligatoria."),
+    nombre: z.string().trim().min(1, "El nombre es obligatorio."),
+    especialidadId: z.string().min(1, "Seleccione la especialidad."),
+    modalidad: z.enum(["INDIVIDUAL", "GRUPAL"], {
+      message: "Seleccione si es individual o grupal.",
+    }),
+    duracionMin: z.coerce
+      .number()
+      .int("La duración debe ser un número entero.")
+      .min(10, "La sesión dura como mínimo 10 minutos.")
+      .max(240, "La sesión dura como máximo 240 minutos.")
+      .refine((n) => n % 5 === 0, "La duración debe ser múltiplo de 5 minutos."),
+    maxParticipantes: z.coerce
+      .number()
+      .int("El máximo de participantes debe ser un número entero.")
+      .max(50, "Máximo 50 participantes."),
+    activo: z.boolean(),
+  })
+  .refine((d) => d.modalidad === "INDIVIDUAL" || d.maxParticipantes >= 2, {
+    message: "Una terapia grupal admite al menos 2 participantes.",
+    path: ["maxParticipantes"],
+  });
 
-export async function guardarPrograma(
+export async function guardarTerapia(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
   const { centroId } = await requireAdmin();
 
   const id = String(formData.get("id") ?? "");
-  const parsed = programaSchema.safeParse({
+  const parsed = terapiaSchema.safeParse({
     sedeId: String(formData.get("sedeId") ?? ""),
     nombre: String(formData.get("nombre") ?? ""),
+    especialidadId: String(formData.get("especialidadId") ?? ""),
+    modalidad: String(formData.get("modalidad") ?? ""),
     duracionMin: String(formData.get("duracionMin") ?? ""),
-    maxPacientes: String(formData.get("maxPacientes") ?? ""),
+    maxParticipantes: String(formData.get("maxParticipantes") || "1"),
     activo: formData.get("activo") === "on",
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const { sedeId, nombre, duracionMin, maxPacientes, activo } = parsed.data;
+  const { sedeId, nombre, especialidadId, modalidad, duracionMin, activo } = parsed.data;
+  // Individual = un participante por franja.
+  const maxParticipantes =
+    modalidad === "INDIVIDUAL" ? 1 : parsed.data.maxParticipantes;
 
   const sede = await sedeDelCentro(centroId, sedeId);
   if (!sede) return { error: "La sede seleccionada no existe." };
 
   if (id) {
-    const actual = await prisma.programaTerapia.findFirst({
+    const actual = await prisma.terapia.findFirst({
       where: { id, sede: { centroId } },
       select: { id: true },
     });
-    if (!actual) return { error: "Programa no encontrado." };
+    if (!actual) return { error: "Terapia no encontrada." };
   }
 
+  // El catálogo de especialidades es por centro.
+  const especialidad = await prisma.especialidad.findFirst({
+    where: { id: especialidadId, centroId },
+    select: { id: true },
+  });
+  if (!especialidad) return { error: "La especialidad seleccionada no existe." };
+
   // Nombre único por sede (excluyendo el propio al editar).
-  const existente = await prisma.programaTerapia.findFirst({
+  const existente = await prisma.terapia.findFirst({
     where: { sedeId, nombre },
     select: { id: true },
   });
   if (existente && existente.id !== id) {
-    return { error: "Ya existe un programa con ese nombre en la sede." };
+    return { error: "Ya existe una terapia con ese nombre en la sede." };
   }
 
+  const data = {
+    sedeId,
+    nombre,
+    especialidadId,
+    modalidad,
+    duracionMin,
+    maxParticipantes,
+    activo,
+  };
   if (id) {
-    await prisma.programaTerapia.update({
-      where: { id },
-      data: { sedeId, nombre, duracionMin, maxPacientes, activo },
-    });
+    await prisma.terapia.update({ where: { id }, data });
   } else {
-    await prisma.programaTerapia.create({
-      data: { sedeId, nombre, duracionMin, maxPacientes, activo },
-    });
+    await prisma.terapia.create({ data });
   }
 
-  revalidatePath("/configuracion/programas");
-  redirect("/configuracion/programas");
+  revalidatePath("/configuracion/terapias");
+  redirect("/configuracion/terapias");
 }
 
 /* ════════════════════════════════════════════════════════

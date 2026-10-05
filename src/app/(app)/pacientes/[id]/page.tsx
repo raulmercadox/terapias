@@ -18,6 +18,7 @@ import Link from "next/link";
 import { nombreCompleto, edad, fecha, fechaHora } from "@/lib/utils";
 import { ApoderadosPanel, type ApoderadoVista } from "../apoderados-panel";
 import { EstadoToggle } from "../estado-toggle";
+import { esPaciente } from "@/lib/tipo-paciente";
 import { normalizarSecciones, resumenAvance } from "./informes/informe";
 import {
   pendienteDe,
@@ -71,8 +72,11 @@ export default async function PacienteDetallePage({
         select: {
           id: true,
           fecha: true,
-          programaRecomendado: true,
           evaluador: { select: { nombres: true, apellidos: true } },
+          tratamiento: {
+            orderBy: { orden: "asc" },
+            select: { id: true, sesiones: true, terapia: { select: { nombre: true } } },
+          },
         },
       },
       historiaClinica: { select: { id: true, fecha: true, updatedAt: true } },
@@ -90,6 +94,8 @@ export default async function PacienteDetallePage({
   });
 
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
+  // Potencial = evaluado o registrado que aún no está en terapia.
+  const enTerapia = await esPaciente(paciente.id);
 
   const pendiente = pendienteDe(paciente.interacciones);
 
@@ -124,6 +130,7 @@ export default async function PacienteDetallePage({
             ) : (
               <Badge color="red">BAJA</Badge>
             )}
+            {!enTerapia && <Badge color="amber">POTENCIAL</Badge>}
             {editaDatos && (
               <ButtonLink href={`/pacientes/${paciente.id}/editar`} variant="secondary">
                 Editar
@@ -253,6 +260,56 @@ export default async function PacienteDetallePage({
           )}
 
           <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Evaluaciones
+              </h2>
+              <ButtonLink
+                href={`/pacientes/${paciente.id}/evaluaciones/nueva`}
+                variant="secondary"
+              >
+                Nueva evaluación
+              </ButtonLink>
+            </div>
+            {paciente.evaluaciones.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Este paciente aún no tiene fichas de evaluación.
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {paciente.evaluaciones.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                  >
+                    <div>
+                      <Link
+                        href={`/pacientes/${paciente.id}/evaluaciones/${ev.id}`}
+                        className="text-sm font-medium text-sky-700 hover:underline"
+                      >
+                        Evaluación del {fecha(ev.fecha)}
+                      </Link>
+                      {ev.evaluador && (
+                        <p className="text-xs text-slate-500">
+                          {`${ev.evaluador.nombres} ${ev.evaluador.apellidos}`.trim()}
+                        </p>
+                      )}
+                      {ev.tratamiento.length > 0 && (
+                        <p className="text-xs text-slate-500">
+                          Tratamiento:{" "}
+                          {ev.tratamiento
+                            .map((t) => `${t.terapia.nombre} (${t.sesiones})`)
+                            .join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -289,54 +346,6 @@ export default async function PacienteDetallePage({
                 )
               )}
             </div>
-          </Card>
-
-          <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Evaluaciones
-              </h2>
-              <ButtonLink
-                href={`/pacientes/${paciente.id}/evaluaciones/nueva`}
-                variant="secondary"
-              >
-                Nueva evaluación
-              </ButtonLink>
-            </div>
-            {paciente.evaluaciones.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Este paciente aún no tiene fichas de evaluación.
-              </p>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {paciente.evaluaciones.map((ev) => (
-                  <li
-                    key={ev.id}
-                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
-                  >
-                    <div>
-                      <Link
-                        href={`/pacientes/${paciente.id}/evaluaciones/${ev.id}`}
-                        className="text-sm font-medium text-sky-700 hover:underline"
-                      >
-                        Evaluación del {fecha(ev.fecha)}
-                      </Link>
-                      {ev.evaluador && (
-                        <p className="text-xs text-slate-500">
-                          {`${ev.evaluador.nombres} ${ev.evaluador.apellidos}`.trim()}
-                        </p>
-                      )}
-                    </div>
-                    {ev.programaRecomendado && (
-                      <Badge color="sky">
-                        {PROGRAMA_LABEL[ev.programaRecomendado] ??
-                          ev.programaRecomendado}
-                      </Badge>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
           </Card>
 
           <Card>
@@ -434,7 +443,7 @@ export default async function PacienteDetallePage({
                 href={`/sesiones?pacienteId=${paciente.id}`}
                 variant="secondary"
               >
-                Ver paquetes / sesiones
+                Ver paquetes
               </ButtonLink>
               <ButtonLink
                 href={`/pagos?pacienteId=${paciente.id}`}

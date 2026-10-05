@@ -4,7 +4,6 @@ import {
   canAccessSede,
   requireAccesoClinico,
   evaluadorFijoDe,
-  puede,
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
@@ -14,6 +13,7 @@ import { FichaForm } from "@/components/ficha/ficha-form";
 import { crearEvaluacion } from "../actions";
 import { CampoEvaluador } from "../campo-evaluador";
 import { CierreEvaluacion } from "../programa-recomendado";
+import { opcionesTerapia } from "../terapias";
 
 export default async function NuevaEvaluacionPage({
   params,
@@ -38,13 +38,14 @@ export default async function NuevaEvaluacionPage({
   });
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
-  const [terapeutas, { plantilla }] = await Promise.all([
+  const [terapeutas, { plantilla }, terapias] = await Promise.all([
     prisma.terapeuta.findMany({
       where: { sedeId: paciente.sedeId, activo: true },
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
       select: { id: true, nombres: true, apellidos: true },
     }),
     obtenerPlantilla(user.centroId, "EVALUACION"),
+    opcionesTerapia(paciente.sedeId),
   ]);
 
   // Para el terapeuta, el evaluador es él mismo y no se puede cambiar.
@@ -79,10 +80,7 @@ export default async function NuevaEvaluacionPage({
             />
           }
           pie={
-            <CierreEvaluacion
-              puedeAplicarPrograma={puede(user, "EDITAR_DATOS_PACIENTE")}
-              muestraPrograma={plantilla.muestraProgramaRecomendado === true}
-            />
+            <CierreEvaluacion borradorId={`nueva-${paciente.id}`} terapias={terapias} />
           }
         />
       </div>

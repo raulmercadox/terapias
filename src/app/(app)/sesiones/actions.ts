@@ -24,9 +24,11 @@ import {
 import {
   cupoTerapeuta,
   conflictoPaciente,
-  type CitaOcupada,
+  mensajeCupo,
+  SELECT_TERAPIA_CUPO,
   type FranjaCita,
 } from "@/lib/conflictos";
+import type { TerapiaCupo } from "./disponibilidad";
 import {
   esIntervaloValido,
   claveFecha,
@@ -97,14 +99,6 @@ function fechaDeClave(clave: string): Date {
   return new Date(y, m - 1, d, 0, 0, 0, 0);
 }
 
-/** Mensaje legible cuando el terapeuta no tiene cupo en una franja. */
-function mensajeCupo(max: number, ej: CitaOcupada): string {
-  if (max <= 1) {
-    return `El terapeuta ya tiene una sesión el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin} (${ej.pacienteNombre}).`;
-  }
-  return `El terapeuta ya alcanzó el cupo máximo (${max}) el ${fmtFecha(ej.fecha)} de ${ej.horaInicio} a ${ej.horaFin}.`;
-}
-
 /** Mensaje legible cuando el paciente ya tiene una sesión en esa franja. */
 function mensajePaciente(c: FranjaCita): string {
   return `El paciente ya tiene una sesión el ${fmtFecha(c.fecha)} de ${c.horaInicio} a ${c.horaFin}. No puede estar en dos sesiones a la vez.`;
@@ -114,17 +108,37 @@ function mensajePaciente(c: FranjaCita): string {
 
 const crearPaqueteSchema = z.object({
   pacienteId: z.string().min(1, "Seleccione un paciente."),
-  programaId: z.string().min(1, "Seleccione un programa."),
-  terapeutaId: z.string().min(1, "Seleccione un terapeuta."),
-  totalSesiones: z.coerce
-    .number()
-    .int()
-    .min(1, "Mínimo 1 sesión.")
-    .max(60, "Máximo 60 sesiones."),
+  evaluacionId: z.string().min(1, "Seleccione la evaluación del paciente."),
   precio: z.coerce.number().min(0, "Precio inválido."),
-  sesiones: z.string().min(1, "Marque las sesiones en el calendario."),
+  lineas: z.string().min(1, "Agende las terapias del tratamiento."),
   observacion: z.string().optional(),
 });
+
+/** Una terapia del paquete tal como llega del formulario. */
+type LineaInput = { terapiaId: string; terapeutaId: string; sesiones: SesionInput[] };
+
+function parseLineas(value: string): LineaInput[] | null {
+  let arr: unknown;
+  try {
+    arr = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(arr)) return null;
+  const out: LineaInput[] = [];
+  for (const it of arr) {
+    const o = (it ?? {}) as Record<string, unknown>;
+    const sesiones = parseSesiones(JSON.stringify(o.sesiones ?? null));
+    if (typeof o.terapiaId !== "string" || typeof o.terapeutaId !== "string" || !sesiones) {
+      return null;
+    }
+    out.push({ terapiaId: o.terapiaId, terapeutaId: o.terapeutaId, sesiones });
+  }
+  return out;
+}
+
+/** Error de validación lanzado dentro de la transacción (se muestra tal cual). */
+class ErrorAgenda extends Error {}
 
 export async function crearPaquete(
   _prev: ActionState,
@@ -143,214 +157,276 @@ export async function crearPaquete(
   }
   const data = parsed.data;
 
-  const sesionesInput = parseSesiones(data.sesiones);
-  if (!sesionesInput || sesionesInput.length === 0) {
-    return { ok: false, error: "Marque las sesiones en el calendario." };
+  const lineasInput = parseLineas(data.lineas);
+  if (!lineasInput || lineasInput.length === 0) {
+    return { ok: false, error: "Agende las terapias del tratamiento." };
   }
 
-  // Una sola sesión por día (no se pueden marcar dos en la misma fecha).
-  const clavesVistas = new Set<string>();
-  for (const s of sesionesInput) {
-    if (clavesVistas.has(s.fecha)) {
-      return { ok: false, error: "Hay sesiones repetidas en el mismo día." };
-    }
-    clavesVistas.add(s.fecha);
+  // La evaluación debe ser del paciente y de la sede: de ella sale el tratamiento.
+  const evaluacion = await prisma.evaluacion.findFirst({
+    where: { id: data.evaluacionId, pacienteId: data.pacienteId, sedeId },
+    select: { tratamiento: { select: { terapiaId: true } } },
+  });
+  if (!evaluacion) {
+    return { ok: false, error: "La evaluación no corresponde al paciente." };
+  }
+  const delTratamiento = new Set(evaluacion.tratamiento.map((t) => t.terapiaId));
+
+  const ids = lineasInput.map((l) => l.terapiaId);
+  if (new Set(ids).size !== ids.length) {
+    return { ok: false, error: "Una terapia aparece dos veces en el paquete." };
+  }
+  if (ids.some((id) => !delTratamiento.has(id))) {
+    return { ok: false, error: "Alguna terapia no está en el tratamiento de la evaluación." };
   }
 
-  // Debe marcarse exactamente la cantidad indicada en "Total de sesiones".
-  if (sesionesInput.length !== data.totalSesiones) {
-    return {
-      ok: false,
-      error: `Debe marcar exactamente ${data.totalSesiones} sesión(es) en el calendario; marcó ${sesionesInput.length}.`,
-    };
-  }
+  const [terapias, terapeutas, sede, feriadosRows] = await Promise.all([
+    prisma.terapia.findMany({
+      where: { id: { in: ids }, sedeId, activo: true },
+      select: { ...SELECT_TERAPIA_CUPO, nombre: true, especialidadId: true, duracionMin: true },
+    }),
+    prisma.terapeuta.findMany({
+      where: { id: { in: lineasInput.map((l) => l.terapeutaId) }, sedeId, activo: true },
+      select: {
+        id: true,
+        refrigerioInicio: true,
+        refrigerioFin: true,
+        especialidades: { select: { especialidadId: true } },
+        vacaciones: { select: { fechaInicio: true, fechaFin: true } },
+      },
+    }),
+    prisma.sede.findUnique({
+      where: { id: sedeId },
+      select: {
+        horaApertura: true,
+        horaCierre: true,
+        diasLaborales: true,
+        refrigerioInicio: true,
+        refrigerioFin: true,
+      },
+    }),
+    prisma.feriado.findMany({ where: { sedeId }, select: { fecha: true } }),
+  ]);
+  if (!sede) return { ok: false, error: "Sede no encontrada." };
+  const feriados = new Set(feriadosRows.map((f) => claveFecha(f.fecha)));
 
-  // El paciente debe pertenecer a la sede.
   const paciente = await prisma.paciente.findFirst({
     where: { id: data.pacienteId, sedeId },
     select: { id: true },
   });
   if (!paciente) return { ok: false, error: "Paciente no encontrado en la sede." };
 
-  // El programa debe pertenecer a la sede y estar activo (define la duración).
-  const programa = await prisma.programaTerapia.findFirst({
-    where: { id: data.programaId, sedeId, activo: true },
-    select: { duracionMin: true, maxPacientes: true },
-  });
-  if (!programa) {
-    return { ok: false, error: "Programa no encontrado o inactivo en la sede." };
-  }
+  const hoyClave = claveFecha(new Date());
 
-  // Configuración de la sede (horario laboral).
-  const sede = await prisma.sede.findUnique({
-    where: { id: sedeId },
-    select: {
-      horaApertura: true,
-      horaCierre: true,
-      diasLaborales: true,
-      refrigerioInicio: true,
-      refrigerioFin: true,
-    },
-  });
-  if (!sede) return { ok: false, error: "Sede no encontrada." };
-
-  const terapeutaId = data.terapeutaId;
-  const ter = await prisma.terapeuta.findFirst({
-    where: { id: terapeutaId, sedeId },
-    select: {
-      id: true,
-      refrigerioInicio: true,
-      refrigerioFin: true,
-      vacaciones: { select: { fechaInicio: true, fechaFin: true } },
-    },
-  });
-  if (!ter) return { ok: false, error: "Terapeuta no encontrado en la sede." };
-  // El refrigerio propio del terapeuta reemplaza al de la sede.
-  const refrigerio = refrigerioEfectivo(sede, ter);
-  const vacaciones = ter.vacaciones.map((v) => ({
-    inicio: claveFecha(v.fechaInicio),
-    fin: claveFecha(v.fechaFin),
-  }));
-
-  // Feriados de la sede (para rechazar sesiones en esos días).
-  const feriadosRows = await prisma.feriado.findMany({
-    where: { sedeId },
-    select: { fecha: true },
-  });
-  const feriados = new Set(feriadosRows.map((f) => claveFecha(f.fecha)));
-
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const hoyClave = claveFecha(hoy);
-
-  // Validar y armar cada sesión concreta.
-  type SesionFinal = { fecha: Date; horaInicio: string; horaFin: string };
-  const finales: SesionFinal[] = [];
-  for (const s of sesionesInput) {
-    if (s.fecha < hoyClave) {
-      return { ok: false, error: `No se puede agendar en una fecha pasada (${s.fecha}).` };
+  // Validar y armar cada terapia con sus sesiones concretas.
+  type SesionFinal = { fecha: Date; clave: string; horaInicio: string; horaFin: string };
+  const lineas: {
+    terapia: (typeof terapias)[number];
+    terapeutaId: string;
+    sesiones: SesionFinal[];
+  }[] = [];
+  for (const l of lineasInput) {
+    const terapia = terapias.find((t) => t.id === l.terapiaId);
+    if (!terapia) {
+      return { ok: false, error: "Alguna terapia del tratamiento está inactiva o no existe." };
     }
-    if (feriados.has(s.fecha)) {
-      return { ok: false, error: `El ${s.fecha} es feriado; elija otro día.` };
-    }
-    if (enVacaciones(vacaciones, s.fecha)) {
-      return {
-        ok: false,
-        error: `El terapeuta está de vacaciones el ${s.fecha}; elija otro día.`,
-      };
-    }
-    const fecha = fechaDeClave(s.fecha);
-    const dia = fecha.getDay();
-    if (!sede.diasLaborales.includes(dia)) {
-      return {
-        ok: false,
-        error: `El ${DIA_NOMBRE[dia]} ${s.fecha} no es laborable en esta sede.`,
-      };
-    }
-    const horaFin = sumarMinutos(s.hora, programa.duracionMin);
-    if (chocaConRefrigerio(s.hora, horaFin, refrigerio)) {
-      return {
-        ok: false,
-        error: `La sesión de las ${s.hora} (${s.fecha}) se cruza con el refrigerio de ${refrigerio!.inicio} a ${refrigerio!.fin}.`,
-      };
+    const ter = terapeutas.find((t) => t.id === l.terapeutaId);
+    if (!ter) {
+      return { ok: false, error: `Seleccione un terapeuta activo para ${terapia.nombre}.` };
     }
     if (
-      !esIntervaloValido(
-        sede.horaApertura,
-        sede.horaCierre,
-        programa.duracionMin,
-        s.hora,
-        PASO_GRILLA_MIN,
-        refrigerio,
-      )
+      terapia.especialidadId &&
+      !ter.especialidades.some((e) => e.especialidadId === terapia.especialidadId)
     ) {
       return {
         ok: false,
-        error: `La hora ${s.hora} (${s.fecha}) no es un intervalo válido del horario de atención.`,
+        error: `El terapeuta elegido para ${terapia.nombre} no tiene su especialidad.`,
       };
     }
-    finales.push({ fecha, horaInicio: s.hora, horaFin });
+    if (l.sesiones.length === 0 || l.sesiones.length > 60) {
+      return { ok: false, error: `${terapia.nombre}: marque de 1 a 60 sesiones.` };
+    }
+    // Una sola sesión por día y terapia.
+    if (new Set(l.sesiones.map((s) => s.fecha)).size !== l.sesiones.length) {
+      return { ok: false, error: `${terapia.nombre}: hay dos sesiones el mismo día.` };
+    }
+
+    // La duración de la sesión la define la terapia; el refrigerio propio del
+    // terapeuta reemplaza al de la sede.
+    const duracionMin = terapia.duracionMin;
+    const refrigerio = refrigerioEfectivo(sede, ter);
+    const vacaciones = ter.vacaciones.map((v) => ({
+      inicio: claveFecha(v.fechaInicio),
+      fin: claveFecha(v.fechaFin),
+    }));
+
+    const sesiones: SesionFinal[] = [];
+    for (const s of l.sesiones) {
+      if (s.fecha < hoyClave) {
+        return { ok: false, error: `No se puede agendar en una fecha pasada (${s.fecha}).` };
+      }
+      if (feriados.has(s.fecha)) {
+        return { ok: false, error: `El ${s.fecha} es feriado; elija otro día.` };
+      }
+      if (enVacaciones(vacaciones, s.fecha)) {
+        return {
+          ok: false,
+          error: `El terapeuta de ${terapia.nombre} está de vacaciones el ${s.fecha}.`,
+        };
+      }
+      const fecha = fechaDeClave(s.fecha);
+      const dia = fecha.getDay();
+      if (!sede.diasLaborales.includes(dia)) {
+        return {
+          ok: false,
+          error: `El ${DIA_NOMBRE[dia]} ${s.fecha} no es laborable en esta sede.`,
+        };
+      }
+      const horaFin = sumarMinutos(s.hora, duracionMin);
+      if (chocaConRefrigerio(s.hora, horaFin, refrigerio)) {
+        return {
+          ok: false,
+          error: `La sesión de las ${s.hora} (${s.fecha}) se cruza con el refrigerio de ${refrigerio!.inicio} a ${refrigerio!.fin}.`,
+        };
+      }
+      if (
+        !esIntervaloValido(
+          sede.horaApertura,
+          sede.horaCierre,
+          duracionMin,
+          s.hora,
+          PASO_GRILLA_MIN,
+          refrigerio,
+        )
+      ) {
+        return {
+          ok: false,
+          error: `La hora ${s.hora} (${s.fecha}) no es un intervalo válido del horario de atención.`,
+        };
+      }
+      sesiones.push({ fecha, clave: s.fecha, horaInicio: s.hora, horaFin });
+    }
+    sesiones.sort((a, b) =>
+      a.clave === b.clave
+        ? a.horaInicio.localeCompare(b.horaInicio)
+        : a.clave.localeCompare(b.clave),
+    );
+    lineas.push({ terapia, terapeutaId: ter.id, sesiones });
   }
 
-  // Orden cronológico para numerar y calcular inicio/fin.
-  finales.sort((a, b) => {
-    const fa = claveFecha(a.fecha);
-    const fb = claveFecha(b.fecha);
-    return fa === fb ? a.horaInicio.localeCompare(b.horaInicio) : fa.localeCompare(fb);
-  });
-  const fechaInicio = finales[0].fecha;
-  const fechaFin = finales[finales.length - 1].fecha;
-
-  // Bloquear si el paciente ya tiene otra sesión solapada o el terapeuta ya
-  // superó su cupo en alguna de las franjas.
-  for (const s of finales) {
-    const pc = await conflictoPaciente(prisma, {
-      pacienteId: data.pacienteId,
-      fecha: s.fecha,
-      horaInicio: s.horaInicio,
-      horaFin: s.horaFin,
-    });
-    if (pc) return { ok: false, error: mensajePaciente(pc) };
-
-    const cupo = await cupoTerapeuta(prisma, {
-      terapeutaId,
-      fecha: s.fecha,
-      horaInicio: s.horaInicio,
-      horaFin: s.horaFin,
-      maxPacientes: programa.maxPacientes,
-      nuevoPacienteId: data.pacienteId,
-    });
-    if (cupo.excede && cupo.ejemplo) {
-      return { ok: false, error: mensajeCupo(programa.maxPacientes, cupo.ejemplo) };
+  // Las terapias del mismo paquete no pueden cruzarse entre sí (es el mismo paciente).
+  const todas = lineas.flatMap((l) => l.sesiones);
+  for (let i = 0; i < todas.length; i++) {
+    for (let j = i + 1; j < todas.length; j++) {
+      const a = todas[i];
+      const b = todas[j];
+      if (a.clave === b.clave && a.horaInicio < b.horaFin && a.horaFin > b.horaInicio) {
+        return {
+          ok: false,
+          error: `Dos terapias se cruzan el ${a.clave} (${a.horaInicio} y ${b.horaInicio}). El paciente no puede estar en dos sesiones a la vez.`,
+        };
+      }
     }
   }
+  const claves = todas.map((s) => s.clave).sort();
+  const totalSesiones = todas.length;
 
-  // Plantilla semanal (primer horario visto por día) para la renovación.
+  let nuevoId = "";
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Las verificaciones van dentro de la transacción para acortar la ventana
+      // en que otra reserva podría tomar la misma franja.
+      for (const l of lineas) {
+        for (const s of l.sesiones) {
+          const pc = await conflictoPaciente(tx, {
+            pacienteId: data.pacienteId,
+            fecha: s.fecha,
+            horaInicio: s.horaInicio,
+            horaFin: s.horaFin,
+          });
+          if (pc) throw new ErrorAgenda(mensajePaciente(pc));
+
+          const cupo = await cupoTerapeuta(tx, {
+            terapeutaId: l.terapeutaId,
+            fecha: s.fecha,
+            horaInicio: s.horaInicio,
+            horaFin: s.horaFin,
+            terapia: l.terapia,
+            nuevoPacienteId: data.pacienteId,
+          });
+          if (cupo.excede) {
+            throw new ErrorAgenda(`${l.terapia.nombre}: ${mensajeCupo(cupo, l.terapia)}`);
+          }
+        }
+      }
+
+      const paquete = await tx.paquete.create({
+        data: {
+          sedeId,
+          pacienteId: data.pacienteId,
+          evaluacionId: data.evaluacionId,
+          totalSesiones,
+          precio: data.precio,
+          fechaInicio: fechaDeClave(claves[0]),
+          fechaFin: fechaDeClave(claves[claves.length - 1]),
+          estado: "ACTIVO",
+          observacion: data.observacion?.trim() || null,
+        },
+      });
+      nuevoId = paquete.id;
+
+      for (const [orden, l] of lineas.entries()) {
+        const horarioSemanal = plantillaSemanal(l.sesiones);
+        const linea = await tx.paqueteTerapia.create({
+          data: {
+            paqueteId: paquete.id,
+            terapiaId: l.terapia.id,
+            terapeutaId: l.terapeutaId,
+            totalSesiones: l.sesiones.length,
+            frecuenciaSemana: Math.max(1, horarioSemanal.length),
+            horarioSemanal,
+            orden,
+          },
+        });
+        await tx.cita.createMany({
+          data: l.sesiones.map((s, i) => ({
+            sedeId,
+            pacienteId: data.pacienteId,
+            terapeutaId: l.terapeutaId,
+            terapiaId: l.terapia.id,
+            paqueteId: paquete.id,
+            paqueteTerapiaId: linea.id,
+            numeroSesion: i + 1,
+            fecha: s.fecha,
+            horaInicio: s.horaInicio,
+            horaFin: s.horaFin,
+            tipo: "SESION" as const,
+            estado: "AGENDADA" as const,
+            asistencia: "PENDIENTE" as const,
+          })),
+        });
+      }
+    }, { timeout: 30_000 });
+  } catch (e) {
+    if (e instanceof ErrorAgenda) return { ok: false, error: e.message };
+    throw e;
+  }
+
+  revalidatePath("/sesiones");
+  revalidatePath(`/pacientes/${data.pacienteId}`);
+  redirect(`/sesiones/${nuevoId}`);
+}
+
+/** Plantilla semanal (primer horario visto por día) para la renovación. */
+function plantillaSemanal(
+  sesiones: { fecha: Date; horaInicio: string }[],
+): { dia: number; hora: string }[] {
   const porDia = new Map<number, string>();
-  for (const s of finales) {
+  for (const s of sesiones) {
     const dia = s.fecha.getDay();
     if (!porDia.has(dia)) porDia.set(dia, s.horaInicio);
   }
-  const horarioSemanal = [...porDia.entries()].map(([dia, hora]) => ({ dia, hora }));
-
-  let nuevoId = "";
-  await prisma.$transaction(async (tx) => {
-    const paquete = await tx.paquete.create({
-      data: {
-        sedeId,
-        pacienteId: data.pacienteId,
-        programaId: data.programaId,
-        totalSesiones: data.totalSesiones,
-        frecuenciaSemana: Math.max(1, porDia.size),
-        horarioSemanal,
-        precio: data.precio,
-        fechaInicio,
-        fechaFin,
-        estado: "ACTIVO",
-        observacion: data.observacion?.trim() || null,
-      },
-    });
-    nuevoId = paquete.id;
-
-    await tx.cita.createMany({
-      data: finales.map((s, i) => ({
-        sedeId,
-        pacienteId: data.pacienteId,
-        terapeutaId,
-        paqueteId: paquete.id,
-        numeroSesion: i + 1,
-        fecha: s.fecha,
-        horaInicio: s.horaInicio,
-        horaFin: s.horaFin,
-        tipo: "SESION" as const,
-        estado: "AGENDADA" as const,
-        asistencia: "PENDIENTE" as const,
-      })),
-    });
-  });
-
-  revalidatePath("/sesiones");
-  redirect(`/sesiones/${nuevoId}`);
+  return [...porDia.entries()].map(([dia, hora]) => ({ dia, hora }));
 }
 
 /* ── registrarAsistencia ─────────────────────────────────── */
@@ -431,7 +507,7 @@ export async function reprogramarSesion(
       sedeId: true,
       paqueteId: true,
       pacienteId: true,
-      paquete: { select: { programa: { select: { maxPacientes: true } } } },
+      terapia: { select: { ...SELECT_TERAPIA_CUPO, especialidadId: true } },
     },
   });
   if (!cita) return { ok: false, error: "Sesión no encontrada." };
@@ -444,10 +520,22 @@ export async function reprogramarSesion(
   const terapeuta = ter
     ? await prisma.terapeuta.findFirst({
         where: { id: ter, sedeId: cita.sedeId },
-        select: { refrigerioInicio: true, refrigerioFin: true },
+        select: {
+          refrigerioInicio: true,
+          refrigerioFin: true,
+          especialidades: { select: { especialidadId: true } },
+        },
       })
     : null;
   if (ter && !terapeuta) return { ok: false, error: "Terapeuta inválido." };
+  const especialidad = cita.terapia?.especialidadId;
+  if (
+    terapeuta &&
+    especialidad &&
+    !terapeuta.especialidades.some((e) => e.especialidadId === especialidad)
+  ) {
+    return { ok: false, error: "El terapeuta no tiene la especialidad de esta terapia." };
+  }
 
   // Reprogramar tiene que respetar el horario de la sede igual que agendar:
   // día laborable, rango de atención y refrigerio (el del terapeuta si tiene).
@@ -495,20 +583,17 @@ export async function reprogramarSesion(
   if (pc) return { ok: false, error: mensajePaciente(pc) };
 
   if (ter) {
-    // Cupo del programa (1 = individual; >1 = grupal). Sin paquete/programa: 1.
-    const maxPacientes = cita.paquete?.programa?.maxPacientes ?? 1;
+    // Solo una terapia grupal comparte la franja (misma terapia y horario).
     const cupo = await cupoTerapeuta(prisma, {
       terapeutaId: ter,
       fecha: nuevaFecha,
       horaInicio,
       horaFin,
-      maxPacientes,
+      terapia: cita.terapia,
       nuevoPacienteId: cita.pacienteId,
       exceptCitaId: citaId,
     });
-    if (cupo.excede && cupo.ejemplo) {
-      return { ok: false, error: mensajeCupo(maxPacientes, cupo.ejemplo) };
-    }
+    if (cupo.excede) return { ok: false, error: mensajeCupo(cupo, cita.terapia) };
   }
 
   await prisma.cita.update({
@@ -662,7 +747,8 @@ export async function anularPaquete(
 
 /* ── renovarPaquete ──────────────────────────────────────── */
 
-// Crea un paquete nuevo idéntico para el mismo paciente, generando sus sesiones.
+// Crea un paquete nuevo con las mismas terapias para el mismo paciente,
+// generando sus sesiones con el horario semanal de cada terapia.
 export async function renovarPaquete(
   _prev: ActionState,
   formData: FormData,
@@ -677,10 +763,25 @@ export async function renovarPaquete(
     select: {
       sedeId: true,
       pacienteId: true,
-      programaId: true,
-      totalSesiones: true,
+      evaluacionId: true,
       precio: true,
       observacion: true,
+      terapias: {
+        orderBy: { orden: "asc" },
+        select: {
+          id: true,
+          totalSesiones: true,
+          terapia: { select: { ...SELECT_TERAPIA_CUPO, nombre: true, duracionMin: true } },
+          terapeuta: {
+            select: {
+              id: true,
+              refrigerioInicio: true,
+              refrigerioFin: true,
+              vacaciones: { select: { fechaInicio: true, fechaFin: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!origen) return { ok: false, error: "Paquete no encontrado." };
@@ -698,46 +799,9 @@ export async function renovarPaquete(
       error: `No puedes renovar: aún hay ${pendientes} sesión(es) sin asistencia registrada en este paquete.`,
     };
   }
-
-  // Reconstruye el horario semanal y la duración a partir de las sesiones del
-  // paquete origen (funciona también para paquetes antiguos sin plantilla).
-  const citasOrigen = await prisma.cita.findMany({
-    where: { paqueteId, tipo: "SESION" },
-    orderBy: { numeroSesion: "asc" },
-    select: { fecha: true, horaInicio: true, horaFin: true, terapeutaId: true },
-  });
-  if (citasOrigen.length === 0) {
-    return { ok: false, error: "El paquete no tiene sesiones para renovar." };
+  if (origen.terapias.length === 0) {
+    return { ok: false, error: "El paquete no tiene terapias para renovar." };
   }
-
-  const porDia = new Map<number, string>();
-  for (const c of citasOrigen) {
-    const d = c.fecha.getDay();
-    if (!porDia.has(d)) porDia.set(d, c.horaInicio);
-  }
-  const horario: HorarioDia[] = [...porDia.entries()].map(([dia, horaInicio]) => ({
-    dia,
-    horaInicio,
-  }));
-
-  const primera = citasOrigen[0];
-  const duracionMin =
-    Math.max(0, aMinutos(primera.horaFin) - aMinutos(primera.horaInicio)) || 45;
-
-  // Terapeuta por defecto: el de la última sesión del paquete origen. Su
-  // refrigerio propio (si tiene) reemplaza al de la sede, y sus vacaciones se
-  // saltan al generar, igual que los feriados.
-  const terapeutaId = citasOrigen[citasOrigen.length - 1].terapeutaId ?? null;
-  const terapeuta = terapeutaId
-    ? await prisma.terapeuta.findUnique({
-        where: { id: terapeutaId },
-        select: {
-          refrigerioInicio: true,
-          refrigerioFin: true,
-          vacaciones: { select: { fechaInicio: true, fechaFin: true } },
-        },
-      })
-    : null;
 
   // El horario heredado pudo dejar de ser válido si la sede cambió su
   // configuración después de crear el paquete original. Se valida la plantilla
@@ -754,33 +818,6 @@ export async function renovarPaquete(
       refrigerioFin: true,
     },
   });
-  if (sedeRenovacion) {
-    for (const h of horario) {
-      const motivo = motivoFueraDeHorarioEnDia(
-        sedeRenovacion,
-        h.dia,
-        h.horaInicio,
-        sumarMinutos(h.horaInicio, duracionMin),
-        terapeuta,
-      );
-      if (motivo) {
-        return {
-          ok: false,
-          error: `No se puede renovar con el horario del paquete (${DIA_NOMBRE[h.dia]} ${h.horaInicio}). ${motivo} Créelo desde “Nuevo paquete” con otro horario.`,
-        };
-      }
-    }
-  }
-
-  // Cupo del programa (1 = individual; >1 = grupal). Paquetes antiguos: 1.
-  let maxPacientes = 1;
-  if (origen.programaId) {
-    const prog = await prisma.programaTerapia.findUnique({
-      where: { id: origen.programaId },
-      select: { maxPacientes: true },
-    });
-    maxPacientes = prog?.maxPacientes ?? 1;
-  }
 
   // La renovación inicia hoy.
   const fechaInicio = new Date();
@@ -791,86 +828,200 @@ export async function renovarPaquete(
     where: { sedeId: origen.sedeId, fecha: { gte: fechaInicio } },
     select: { fecha: true },
   });
-  const feriados = new Set(feriadosRows.map((f) => claveFecha(f.fecha)));
-  // Los días de vacaciones del terapeuta heredado también se saltan. El tope
-  // cubre de sobra cualquier paquete (una sesión por semana como mínimo).
-  const tope = new Date(fechaInicio);
-  tope.setDate(tope.getDate() + (origen.totalSesiones + 60) * 7);
-  for (const clave of clavesVacaciones(terapeuta?.vacaciones ?? [], fechaInicio, tope)) {
-    feriados.add(clave);
-  }
+  const feriadosSede = feriadosRows.map((f) => claveFecha(f.fecha));
 
-  const generadas = generarSesiones({
-    totalSesiones: origen.totalSesiones,
-    horario,
-    duracionMin,
-    fechaInicio,
-    feriados,
-  });
-  if (generadas.length === 0) {
-    return { ok: false, error: "No se pudieron generar las sesiones de la renovación." };
-  }
-  const fechaFin = generadas[generadas.length - 1].fecha;
+  type LineaRenovada = {
+    terapiaId: string | null;
+    terapia: TerapiaCupo | null;
+    nombre: string;
+    terapeutaId: string | null;
+    totalSesiones: number;
+    horario: HorarioDia[];
+    duracionMin: number;
+    feriados: Set<string>;
+    sesiones: { fecha: Date; horaInicio: string; horaFin: string }[];
+  };
+  const lineas: LineaRenovada[] = [];
 
-  // Bloquear si el paciente ya tiene otra sesión solapada o el terapeuta
-  // heredado ya superó su cupo en alguna franja.
-  for (const s of generadas) {
-    const pc = await conflictoPaciente(prisma, {
-      pacienteId: origen.pacienteId,
-      fecha: s.fecha,
-      horaInicio: s.horaInicio,
-      horaFin: s.horaFin,
+  for (const l of origen.terapias) {
+    const nombre = l.terapia?.nombre ?? "la terapia";
+    // Reconstruye el horario semanal a partir de las sesiones de la terapia
+    // (funciona también para paquetes antiguos sin plantilla).
+    const citasOrigen = await prisma.cita.findMany({
+      where: { paqueteTerapiaId: l.id, tipo: "SESION" },
+      orderBy: { numeroSesion: "asc" },
+      select: { fecha: true, horaInicio: true, horaFin: true },
     });
-    if (pc) return { ok: false, error: mensajePaciente(pc) };
+    if (citasOrigen.length === 0) {
+      return { ok: false, error: `${nombre}: no tiene sesiones para renovar.` };
+    }
+    const porDia = new Map<number, string>();
+    for (const c of citasOrigen) {
+      const d = c.fecha.getDay();
+      if (!porDia.has(d)) porDia.set(d, c.horaInicio);
+    }
+    const horario: HorarioDia[] = [...porDia.entries()].map(([dia, horaInicio]) => ({
+      dia,
+      horaInicio,
+    }));
 
-    if (terapeutaId) {
-      const cupo = await cupoTerapeuta(prisma, {
-        terapeutaId,
-        fecha: s.fecha,
-        horaInicio: s.horaInicio,
-        horaFin: s.horaFin,
-        maxPacientes,
-        nuevoPacienteId: origen.pacienteId,
-      });
-      if (cupo.excede && cupo.ejemplo) {
-        return { ok: false, error: mensajeCupo(maxPacientes, cupo.ejemplo) };
+    // Duración vigente de la terapia; sin terapia, la de la primera sesión.
+    const terapeuta = l.terapeuta;
+    const primera = citasOrigen[0];
+    const duracionMin =
+      l.terapia?.duracionMin ??
+      (Math.max(0, aMinutos(primera.horaFin) - aMinutos(primera.horaInicio)) || 45);
+
+    if (sedeRenovacion) {
+      for (const h of horario) {
+        const motivo = motivoFueraDeHorarioEnDia(
+          sedeRenovacion,
+          h.dia,
+          h.horaInicio,
+          sumarMinutos(h.horaInicio, duracionMin),
+          terapeuta,
+        );
+        if (motivo) {
+          return {
+            ok: false,
+            error: `No se puede renovar ${nombre} con su horario (${DIA_NOMBRE[h.dia]} ${h.horaInicio}). ${motivo} Créelo desde “Nuevo paquete” con otro horario.`,
+          };
+        }
+      }
+    }
+
+    // Los días de vacaciones del terapeuta también se saltan, igual que los
+    // feriados. El tope cubre de sobra cualquier paquete.
+    const feriados = new Set(feriadosSede);
+    const tope = new Date(fechaInicio);
+    tope.setDate(tope.getDate() + (l.totalSesiones + 60) * 7);
+    for (const clave of clavesVacaciones(terapeuta?.vacaciones ?? [], fechaInicio, tope)) {
+      feriados.add(clave);
+    }
+
+    const sesiones = generarSesiones({
+      totalSesiones: l.totalSesiones,
+      horario,
+      duracionMin,
+      fechaInicio,
+      feriados,
+    });
+    if (sesiones.length === 0) {
+      return { ok: false, error: `${nombre}: no se pudieron generar las sesiones.` };
+    }
+    lineas.push({
+      terapiaId: l.terapia?.id ?? null,
+      terapia: l.terapia,
+      nombre,
+      terapeutaId: terapeuta?.id ?? null,
+      totalSesiones: l.totalSesiones,
+      horario,
+      duracionMin,
+      feriados,
+      sesiones,
+    });
+  }
+
+  // Las terapias renovadas no pueden cruzarse entre sí (mismo paciente).
+  const todas = lineas.flatMap((l) => l.sesiones);
+  for (let i = 0; i < todas.length; i++) {
+    for (let j = i + 1; j < todas.length; j++) {
+      const a = todas[i];
+      const b = todas[j];
+      if (
+        claveFecha(a.fecha) === claveFecha(b.fecha) &&
+        a.horaInicio < b.horaFin &&
+        a.horaFin > b.horaInicio
+      ) {
+        return {
+          ok: false,
+          error: `Al renovar, dos terapias se cruzan el ${fmtFecha(a.fecha)} (${a.horaInicio} y ${b.horaInicio}). Créelo desde “Nuevo paquete”.`,
+        };
       }
     }
   }
+  const fechas = todas.map((s) => s.fecha.getTime());
+  const fechaFin = new Date(Math.max(...fechas));
 
   let nuevoId = "";
-  await prisma.$transaction(async (tx) => {
-    const paquete = await tx.paquete.create({
-      data: {
-        sedeId: origen.sedeId,
-        pacienteId: origen.pacienteId,
-        programaId: origen.programaId,
-        totalSesiones: origen.totalSesiones,
-        frecuenciaSemana: horario.length,
-        horarioSemanal: horario.map((h) => ({ dia: h.dia, hora: h.horaInicio })),
-        precio: origen.precio,
-        fechaInicio,
-        fechaFin,
-        estado: "ACTIVO",
-        observacion: origen.observacion,
-      },
-    });
-    nuevoId = paquete.id;
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Bloquear si el paciente ya tiene otra sesión solapada o el terapeuta
+      // heredado ya no tiene la franja libre.
+      for (const l of lineas) {
+        for (const s of l.sesiones) {
+          const pc = await conflictoPaciente(tx, {
+            pacienteId: origen.pacienteId,
+            fecha: s.fecha,
+            horaInicio: s.horaInicio,
+            horaFin: s.horaFin,
+          });
+          if (pc) throw new ErrorAgenda(mensajePaciente(pc));
 
-    await tx.cita.createMany({
-      data: construirSesiones({
-        sedeId: origen.sedeId,
-        pacienteId: origen.pacienteId,
-        paqueteId: paquete.id,
-        terapeutaId,
-        totalSesiones: origen.totalSesiones,
-        horario,
-        duracionMin,
-        fechaInicio,
-        feriados,
-      }),
-    });
-  });
+          if (l.terapeutaId) {
+            const cupo = await cupoTerapeuta(tx, {
+              terapeutaId: l.terapeutaId,
+              fecha: s.fecha,
+              horaInicio: s.horaInicio,
+              horaFin: s.horaFin,
+              terapia: l.terapia,
+              nuevoPacienteId: origen.pacienteId,
+            });
+            if (cupo.excede) {
+              throw new ErrorAgenda(`${l.nombre}: ${mensajeCupo(cupo, l.terapia)}`);
+            }
+          }
+        }
+      }
+
+      const paquete = await tx.paquete.create({
+        data: {
+          sedeId: origen.sedeId,
+          pacienteId: origen.pacienteId,
+          evaluacionId: origen.evaluacionId,
+          totalSesiones: todas.length,
+          precio: origen.precio,
+          fechaInicio,
+          fechaFin,
+          estado: "ACTIVO",
+          observacion: origen.observacion,
+        },
+      });
+      nuevoId = paquete.id;
+
+      for (const [orden, l] of lineas.entries()) {
+        const linea = await tx.paqueteTerapia.create({
+          data: {
+            paqueteId: paquete.id,
+            terapiaId: l.terapiaId,
+            terapeutaId: l.terapeutaId,
+            totalSesiones: l.totalSesiones,
+            frecuenciaSemana: l.horario.length,
+            horarioSemanal: l.horario.map((h) => ({ dia: h.dia, hora: h.horaInicio })),
+            orden,
+          },
+        });
+        await tx.cita.createMany({
+          data: construirSesiones({
+            sedeId: origen.sedeId,
+            pacienteId: origen.pacienteId,
+            paqueteId: paquete.id,
+            paqueteTerapiaId: linea.id,
+            terapeutaId: l.terapeutaId,
+            terapiaId: l.terapiaId,
+            totalSesiones: l.totalSesiones,
+            horario: l.horario,
+            duracionMin: l.duracionMin,
+            fechaInicio,
+            feriados: l.feriados,
+          }),
+        });
+      }
+    }, { timeout: 30_000 });
+  } catch (e) {
+    if (e instanceof ErrorAgenda) return { ok: false, error: e.message };
+    throw e;
+  }
 
   revalidatePath("/sesiones");
   redirect(`/sesiones/${nuevoId}`);
