@@ -7,7 +7,7 @@ import {
 } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui";
-import { nombreCompleto, edad, hoyLima } from "@/lib/utils";
+import { nombreCompleto, edad, hoyLima, fecha } from "@/lib/utils";
 import { obtenerPlantilla } from "@/lib/plantillas";
 import { FichaForm } from "@/components/ficha/ficha-form";
 import { crearEvaluacion } from "../actions";
@@ -38,7 +38,7 @@ export default async function NuevaEvaluacionPage({
   });
   if (!paciente || !(await canAccessSede(user, paciente.sedeId))) notFound();
 
-  const [terapeutas, { plantilla }, terapias] = await Promise.all([
+  const [terapeutas, { plantilla }, terapias, abierta] = await Promise.all([
     prisma.terapeuta.findMany({
       where: { sedeId: paciente.sedeId, activo: true },
       orderBy: [{ apellidos: "asc" }, { nombres: "asc" }],
@@ -46,6 +46,11 @@ export default async function NuevaEvaluacionPage({
     }),
     obtenerPlantilla(user.centroId, "EVALUACION"),
     opcionesTerapia(paciente.sedeId),
+    // La nueva evaluación cerrará la que esté abierta (solo una a la vez).
+    prisma.evaluacion.findFirst({
+      where: { pacienteId: paciente.id, cerradaEn: null },
+      select: { fecha: true },
+    }),
   ]);
 
   // Para el terapeuta, el evaluador es él mismo y no se puede cambiar.
@@ -58,7 +63,13 @@ export default async function NuevaEvaluacionPage({
         title="Nueva ficha de evaluación"
         subtitle={`${nombreCompleto(paciente)} · ${edad(paciente.fechaNacimiento)}`}
       />
-      <div className="max-w-4xl">
+      <div className="max-w-4xl space-y-4">
+        {abierta && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Al guardar se cerrará la evaluación abierta del {fecha(abierta.fecha)}:
+            los nuevos paquetes y renovaciones usarán esta.
+          </p>
+        )}
         <FichaForm
           plantilla={plantilla}
           // Precarga el Dx registrado en la ficha del paciente, si la plantilla

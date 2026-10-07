@@ -14,8 +14,11 @@ import {
   generarIntervalos,
   refrigerioEfectivo,
   sumarMinutos,
+  esIntervaloValido,
+  PASO_GRILLA_MIN,
   type RangoVacaciones,
 } from "../horario";
+import { proyectarHorario, type DiaPlantilla } from "../renovacion";
 import {
   estadoCelda,
   type CitaOcupada,
@@ -51,6 +54,19 @@ type EvaluacionOpt = {
   plazoSemanas: number;
   tratamiento: { terapiaId: string; sesiones: number; sesionesSemana: number }[];
 };
+/** Datos que la renovación hereda del paquete anterior. */
+type RenovacionOpt = {
+  paqueteId: string;
+  /** null si el rol no ve montos: el precio se ingresa a mano. */
+  precio: number | null;
+  observacion: string;
+  sugerencias: { terapiaId: string; terapeutaId: string | null; plantilla: DiaPlantilla[] }[];
+};
+/** Lo que se pudo precargar de una terapia al renovar. */
+type AvisoRenovacion =
+  | { tipo: "nueva" }
+  | { tipo: "sinTerapeuta" }
+  | { tipo: "precargada"; precargadas: number };
 /** Cita futura de la sede (precalculada en el server con su clave). */
 type CitaOcup = CitaOcupada & { terapeutaId: string | null };
 
@@ -102,6 +118,12 @@ function totalDe(l: Linea): number {
   return Math.max(0, Math.floor(Number(l.total) || 0));
 }
 
+/** "YYYY-MM-DD" → getDay() en horario local. */
+function diaDeClave(clave: string): number {
+  const [y, m, d] = clave.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay();
+}
+
 function lineasDeEvaluacion(ev: EvaluacionOpt | undefined): Linea[] {
   return (ev?.tratamiento ?? []).map((t) => ({
     terapiaId: t.terapiaId,
@@ -140,6 +162,7 @@ export default function NuevoPaqueteForm({
   evaluaciones,
   pacienteInicial,
   evaluacionInicialId,
+  renovacion,
   terapias,
   terapeutas,
   horaApertura,
@@ -159,6 +182,8 @@ export default function NuevoPaqueteForm({
   pacienteInicial?: string;
   /** Evaluación elegida; por defecto, la más reciente del paciente. */
   evaluacionInicialId?: string;
+  /** Modo renovación: paciente y evaluación fijos, terapeuta y horario sugeridos. */
+  renovacion?: RenovacionOpt;
   terapias: TerapiaOpt[];
   terapeutas: TerapeutaOpt[];
   horaApertura: string;
@@ -185,9 +210,94 @@ export default function NuevoPaqueteForm({
     evaluaciones.find((e) => e.pacienteId === pacienteInicial);
   const [pacienteId, setPacienteId] = useState(pacienteInicial ?? "");
   const [evaluacionId, setEvaluacionId] = useState(evaluacionDePartida?.id ?? "");
-  const [lineas, setLineas] = useState<Linea[]>(() =>
-    lineasDeEvaluacion(evaluacionDePartida),
-  );
+  // Al renovar, cada terapia de la evaluación arranca con el terapeuta anterior
+  // (si aún puede atenderla) y su horario semanal proyectado desde hoy en las
+  // franjas que sigan libres. Lo que no cabe queda para marcarlo a mano.
+  const [inicio] = useState(() => {
+    const base = lineasDeEvaluacion(evaluacionDePartida);
+    const avisos: Record<string, AvisoRenovacion> = {};
+    if (!renovacion) return { lineas: base, avisos };
+
+    const desde = new Date();
+    desde.setHours(0, 0, 0, 0);
+    const hoyClaveIni = claveFecha(desde);
+    const feriadosSet = new Set(feriados);
+    const ocupadasPaciente: CitaOcupada[] = citas.filter(
+      (c) => c.pacienteId === pacienteInicial,
+    );
+    const lineasIni = base.map((l) => {
+      const sug = renovacion.sugerencias.find((x) => x.terapiaId === l.terapiaId);
+      const t = terapias.find((x) => x.id === l.terapiaId);
+      if (!t) return l;
+      // Terapia que la evaluación agrega: no hay terapeuta ni horario previos.
+      if (!sug) {
+        avisos[l.terapiaId] = { tipo: "nueva" };
+        return l;
+      }
+      const ter = terapeutas.find(
+        (x) =>
+          x.id === sug.terapeutaId &&
+          (!t.especialidadId || x.especialidadIds.includes(t.especialidadId)),
+      );
+      if (!ter) {
+        avisos[l.terapiaId] = { tipo: "sinTerapeuta" };
+        return l;
+      }
+      const refri = refrigerioEfectivo({ refrigerioInicio, refrigerioFin }, ter);
+      const citasTer = citas.filter((c) => c.terapeutaId === ter.id);
+      const sel = t.activo
+        ? proyectarHorario({
+            plantilla: sug.plantilla,
+            total: totalDe(l),
+            desde,
+            semanas: MAX_SEMANAS,
+            seleccionable: (clave, hora) => {
+              if (!diasLaborales.includes(diaDeClave(clave))) return false;
+              if (
+                !esIntervaloValido(
+                  horaApertura,
+                  horaCierre,
+                  t.duracionMin,
+                  hora,
+                  PASO_GRILLA_MIN,
+                  refri,
+                )
+              ) {
+                return false;
+              }
+              const estado = estadoCelda({
+                clave,
+                horaInicio: hora,
+                horaFin: sumarMinutos(hora, t.duracionMin),
+                hoyClave: hoyClaveIni,
+                feriados: feriadosSet,
+                vacaciones: ter.vacaciones,
+                citasTerapeuta: citasTer,
+                citasPaciente: ocupadasPaciente,
+                terapia: t,
+                pacienteId: pacienteInicial,
+              });
+              return estado === "libre" || estado === "parcial";
+            },
+          })
+        : {};
+      // Lo marcado ocupa al paciente para las terapias siguientes.
+      for (const [clave, hora] of Object.entries(sel)) {
+        ocupadasPaciente.push({
+          clave,
+          pacienteId: pacienteInicial ?? "",
+          terapiaId: l.terapiaId,
+          horaInicio: hora,
+          horaFin: sumarMinutos(hora, t.duracionMin),
+        });
+      }
+      avisos[l.terapiaId] = { tipo: "precargada", precargadas: Object.keys(sel).length };
+      return { ...l, terapeutaId: ter.id, sel };
+    });
+    return { lineas: lineasIni, avisos };
+  });
+  const avisosRenovacion = inicio.avisos;
+  const [lineas, setLineas] = useState<Linea[]>(inicio.lineas);
   // Terapia del tratamiento que se está agendando en el calendario.
   const [activa, setActiva] = useState(0);
   // Semana mostrada: 0 = semana actual.
@@ -233,6 +343,7 @@ export default function NuevoPaqueteForm({
   const duracionMin = terapia?.duracionMin ?? 45;
   const total = linea ? totalDe(linea) : 0;
   const marcadas = linea ? Object.keys(linea.sel).length : 0;
+  const aviso = linea ? avisosRenovacion[linea.terapiaId] : undefined;
 
   /** Terapeutas que pueden atender una terapia (por su especialidad). */
   function terapeutasPara(t: TerapiaOpt | undefined): TerapeutaOpt[] {
@@ -389,40 +500,64 @@ export default function NuevoPaqueteForm({
       <input type="hidden" name="sedeId" value={sedeId} />
       <input type="hidden" name="lineas" value={lineasJSON} />
 
-      <Field label="Paciente" required>
-        <Combobox
-          name="pacienteId"
-          required
-          options={pacientes}
-          value={pacienteId}
-          onChange={elegirPaciente}
-          placeholder="Seleccione un paciente…"
-        />
-      </Field>
-
-      {pacienteId && (
-        <Field label="Evaluación (tratamiento)" required>
-          {evaluacionesPaciente.length === 0 ? (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              El paciente no tiene una evaluación con tratamiento sugerido.
-              Registra su evaluación inicial (con las terapias y sesiones) antes
-              de programar el paquete.
-            </p>
-          ) : (
-            <Select
-              name="evaluacionId"
+      {renovacion ? (
+        <>
+          <input type="hidden" name="renovarDe" value={renovacion.paqueteId} />
+          <input type="hidden" name="pacienteId" value={pacienteId} />
+          <input type="hidden" name="evaluacionId" value={evaluacionId} />
+          <dl className="grid gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-500">Paciente</dt>
+              <dd className="font-medium text-slate-800">
+                {pacientes.find((p) => p.id === pacienteId)?.nombre ?? "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Evaluación (tratamiento)</dt>
+              <dd className="font-medium text-slate-800">
+                {evaluacionDePartida?.etiqueta ?? "—"}
+              </dd>
+            </div>
+          </dl>
+        </>
+      ) : (
+        <>
+          <Field label="Paciente" required>
+            <Combobox
+              name="pacienteId"
               required
-              value={evaluacionId}
-              onChange={(e) => elegirEvaluacion(e.target.value)}
-            >
-              {evaluacionesPaciente.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.etiqueta}
-                </option>
-              ))}
-            </Select>
+              options={pacientes}
+              value={pacienteId}
+              onChange={elegirPaciente}
+              placeholder="Seleccione un paciente…"
+            />
+          </Field>
+
+          {pacienteId && (
+            <Field label="Evaluación (tratamiento)" required>
+              {evaluacionesPaciente.length === 0 ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                  El paciente no tiene una evaluación abierta con tratamiento
+                  sugerido. Registra su evaluación (con las terapias y sesiones)
+                  antes de programar el paquete.
+                </p>
+              ) : (
+                <Select
+                  name="evaluacionId"
+                  required
+                  value={evaluacionId}
+                  onChange={(e) => elegirEvaluacion(e.target.value)}
+                >
+                  {evaluacionesPaciente.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.etiqueta}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
           )}
-        </Field>
+        </>
       )}
 
       {lineas.length > 0 && (
@@ -470,6 +605,17 @@ export default function NuevoPaqueteForm({
                   : "Individual"}{" "}
                 · Sugerido: {linea.sesionesSemana} por semana
               </p>
+              {aviso && (
+                <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                  {aviso.tipo === "nueva"
+                    ? "Terapia nueva en la evaluación: elige el terapeuta y marca las sesiones."
+                    : aviso.tipo === "sinTerapeuta"
+                      ? "El terapeuta anterior ya no puede atender esta terapia: elige otro terapeuta y marca las sesiones."
+                      : aviso.precargadas >= total
+                        ? `Se precargó el horario del paquete anterior: ${aviso.precargadas} sesiones. Puedes ajustarlas.`
+                        : `Se precargó el horario del paquete anterior: ${aviso.precargadas} de ${total} sesiones (el resto de franjas ya no está libre). Marca las que faltan en el calendario.`}
+                </p>
+              )}
               {!terapia.activo && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                   Esta terapia está inactiva. Actívala en Configuración › Terapias
@@ -723,12 +869,17 @@ export default function NuevoPaqueteForm({
           min={0}
           step="0.01"
           placeholder="0.00"
+          defaultValue={renovacion?.precio ?? undefined}
           required
         />
       </Field>
 
       <Field label="Observación (opcional)">
-        <Textarea name="observacion" placeholder="Notas del paquete…" />
+        <Textarea
+          name="observacion"
+          placeholder="Notas del paquete…"
+          defaultValue={renovacion?.observacion}
+        />
       </Field>
 
       {state.error && (
@@ -742,7 +893,9 @@ export default function NuevoPaqueteForm({
           {pending
             ? "Creando…"
             : todoCompleto
-              ? "Crear paquete"
+              ? renovacion
+                ? "Crear renovación"
+                : "Crear paquete"
               : "Agenda todas las terapias"}
         </Button>
       </div>

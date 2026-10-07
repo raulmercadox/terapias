@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useFormReintento } from "@/components/form-reintento";
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, ButtonLink, Field, Input, Textarea } from "@/components/ui";
 import {
   actualizarPaquete,
   cambiarEstadoPaquete,
@@ -21,6 +21,8 @@ export default function PaqueteAcciones({
   precio,
   observacion,
   todasRegistradas,
+  pacienteId,
+  renovacion,
 }: {
   paqueteId: string;
   estado: EstadoPaquete;
@@ -28,6 +30,14 @@ export default function PaqueteAcciones({
   precio: number | null;
   observacion: string;
   todasRegistradas: boolean;
+  pacienteId: string;
+  /**
+   * Cómo se renueva: EVALUACION = desde la evaluación abierta del paciente;
+   * SIN_EVALUACION = no se puede, el paciente no tiene evaluación abierta;
+   * ANTIGUO = paquete sin evaluación y paciente sin evaluación abierta, se
+   * copia en un clic.
+   */
+  renovacion: "EVALUACION" | "SIN_EVALUACION" | "ANTIGUO";
 }) {
   const [editar, setEditar] = useState(false);
 
@@ -129,31 +139,73 @@ export default function PaqueteAcciones({
         </form>
       )}
 
-      {/* Renovar */}
-      <form action={renovAction}>
-        <input type="hidden" name="paqueteId" value={paqueteId} />
-        <Button
-          type="submit"
-          variant="primary"
-          className="w-full"
-          disabled={renovPending || !todasRegistradas}
-          title={
-            todasRegistradas
-              ? undefined
-              : "Disponible cuando todas las sesiones tengan asistencia registrada."
-          }
-        >
-          {renovPending ? "Renovando…" : "Renovar"}
-        </Button>
-        <p className="mt-1 text-xs text-slate-400">
-          {todasRegistradas
-            ? "Crea un paquete nuevo idéntico para el mismo paciente."
-            : "Solo disponible cuando se completen todas las sesiones del paquete actual."}
-        </p>
-        {renovState.error && (
-          <p className="mt-1 text-sm text-red-700">{renovState.error}</p>
-        )}
-      </form>
+      {/* Renovar: se reagenda desde "Nuevo paquete" con la evaluación abierta
+          del paciente (la del paquete o una más nueva que la reemplazó). */}
+      {renovacion === "EVALUACION" ? (
+        <div>
+          {todasRegistradas ? (
+            <ButtonLink href={`/sesiones/nuevo?renovar=${paqueteId}`} className="w-full">
+              Renovar
+            </ButtonLink>
+          ) : (
+            <Button
+              type="button"
+              className="w-full"
+              disabled
+              title="Disponible cuando todas las sesiones tengan asistencia registrada."
+            >
+              Renovar
+            </Button>
+          )}
+          <p className="mt-1 text-xs text-slate-400">
+            {todasRegistradas
+              ? "Aplica de nuevo la evaluación: precarga terapeutas y horario donde sigan libres."
+              : "Solo disponible cuando se completen todas las sesiones del paquete actual."}
+          </p>
+        </div>
+      ) : renovacion === "SIN_EVALUACION" ? (
+        <div>
+          <Button type="button" className="w-full" disabled>
+            Renovar
+          </Button>
+          <p className="mt-1 text-xs text-slate-400">
+            El paciente no tiene una evaluación abierta. Registra una nueva
+            evaluación para renovar.
+          </p>
+          <ButtonLink
+            href={`/pacientes/${pacienteId}/evaluaciones/nueva`}
+            variant="secondary"
+            className="mt-2 w-full"
+          >
+            Nueva evaluación
+          </ButtonLink>
+        </div>
+      ) : (
+        <form action={renovAction}>
+          <input type="hidden" name="paqueteId" value={paqueteId} />
+          <Button
+            type="submit"
+            variant="primary"
+            className="w-full"
+            disabled={renovPending || !todasRegistradas}
+            title={
+              todasRegistradas
+                ? undefined
+                : "Disponible cuando todas las sesiones tengan asistencia registrada."
+            }
+          >
+            {renovPending ? "Renovando…" : "Renovar"}
+          </Button>
+          <p className="mt-1 text-xs text-slate-400">
+            {todasRegistradas
+              ? "Crea un paquete nuevo idéntico para el mismo paciente."
+              : "Solo disponible cuando se completen todas las sesiones del paquete actual."}
+          </p>
+          {renovState.error && (
+            <p className="mt-1 text-sm text-red-700">{renovState.error}</p>
+          )}
+        </form>
+      )}
 
       {/* Anular */}
       {estado !== "ANULADO" && (

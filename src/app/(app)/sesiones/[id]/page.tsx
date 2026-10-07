@@ -33,6 +33,7 @@ import {
 } from "../ui";
 import SesionFila from "./sesion-fila";
 import PaqueteAcciones from "./paquete-acciones";
+import { evaluacionAbierta } from "../renovable";
 
 export default async function PaqueteDetallePage({
   params,
@@ -104,6 +105,9 @@ export default async function PaqueteDetallePage({
 
   if (!paquete) notFound();
   if (!(await canAccessSede(user, paquete.sedeId))) notFound();
+
+  // La renovación aplica la evaluación abierta del paciente.
+  const abierta = await evaluacionAbierta(paquete.pacienteId);
 
   const terapeutas = await prisma.terapeuta.findMany({
     where: { sedeId: paquete.sedeId, activo: true },
@@ -272,6 +276,10 @@ export default async function PaqueteDetallePage({
             precio={veMontos ? Number(paquete.precio) : null}
             observacion={paquete.observacion ?? ""}
             todasRegistradas={todasRegistradas}
+            pacienteId={paquete.pacienteId}
+            renovacion={
+              abierta ? "EVALUACION" : paquete.evaluacionId ? "SIN_EVALUACION" : "ANTIGUO"
+            }
           />
         </Card>
       </div>

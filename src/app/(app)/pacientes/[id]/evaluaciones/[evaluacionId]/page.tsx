@@ -18,6 +18,7 @@ import { estaDesactualizada } from "@/lib/fichas/snapshot";
 import { FichaVista, Dato } from "@/components/ficha/ficha-vista";
 import { ImprimirBoton } from "@/components/imprimir-boton";
 import { EliminarEvaluacionBoton } from "./eliminar-boton";
+import { CierreEvaluacionBoton } from "./cierre-boton";
 import { ActualizarPlantillaBoton } from "./actualizar-plantilla-boton";
 
 const SEXO_LABEL: Record<string, string> = {
@@ -86,7 +87,9 @@ export default async function EvaluacionDetallePage({
       <div className="no-print">
         <PageHeader
           title="Ficha de evaluación"
-          subtitle={`${nombreCompleto(p)} · Evaluación del ${fecha(evaluacion.fecha)}`}
+          subtitle={`${nombreCompleto(p)} · Evaluación del ${fecha(evaluacion.fecha)} · ${
+            evaluacion.cerradaEn ? `Cerrada el ${fecha(evaluacion.cerradaEn)}` : "Abierta"
+          }`}
           actions={
             <>
               <ButtonLink href={`/pacientes/${p.id}`} variant="secondary">
@@ -100,6 +103,12 @@ export default async function EvaluacionDetallePage({
                 >
                   Editar
                 </ButtonLink>
+              )}
+              {esAutorClinico(user, evaluacion.evaluadorId) && (
+                <CierreEvaluacionBoton
+                  evaluacionId={evaluacion.id}
+                  cerrada={!!evaluacion.cerradaEn}
+                />
               )}
               {user.rol === "ADMINISTRADOR" && (
                 <EliminarEvaluacionBoton evaluacionId={evaluacion.id} />
@@ -198,13 +207,20 @@ export default async function EvaluacionDetallePage({
               ))}
             </ul>
           )}
-          {evaluacion.tratamiento.length > 0 && !esTerapeuta(user) && (
-            <div className="no-print mt-4">
-              <ButtonLink href={`/sesiones/nuevo?evaluacion=${evaluacion.id}`}>
-                Programar paquete
-              </ButtonLink>
-            </div>
-          )}
+          {evaluacion.tratamiento.length > 0 &&
+            (evaluacion.cerradaEn ? (
+              <p className="no-print mt-4 text-sm text-slate-500">
+                Evaluación cerrada: ya no se usa para crear ni renovar paquetes.
+              </p>
+            ) : (
+              !esTerapeuta(user) && (
+                <div className="no-print mt-4">
+                  <ButtonLink href={`/sesiones/nuevo?evaluacion=${evaluacion.id}`}>
+                    Programar paquete
+                  </ButtonLink>
+                </div>
+              )
+            ))}
           <dl className="mt-4 border-t border-slate-100 pt-4">
             <Dato label="Recomendaciones" value={evaluacion.recomendaciones} />
           </dl>

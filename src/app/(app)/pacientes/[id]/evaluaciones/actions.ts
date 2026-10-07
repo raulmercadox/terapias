@@ -16,7 +16,7 @@ import { obtenerPlantilla } from "@/lib/plantillas";
 import { normalizarPlantilla } from "@/lib/fichas/plantilla";
 import { reconciliar, snapshotDe } from "@/lib/fichas/snapshot";
 import { parseValores } from "@/components/ficha/form-datos";
-import { fechaInput } from "@/lib/utils";
+import { fecha, fechaInput } from "@/lib/utils";
 import { parseTratamiento, type LineaTratamiento } from "./tratamiento";
 import { fechaEntradaEvaluacion } from "../../../seguimiento/seguimiento";
 
@@ -128,6 +128,11 @@ export async function crearEvaluacion(
   const { plantilla, version } = await obtenerPlantilla(user.centroId, "EVALUACION");
 
   const evaluacion = await prisma.$transaction(async (tx) => {
+    // Solo una evaluación abierta por paciente: la nueva reemplaza a la anterior.
+    await tx.evaluacion.updateMany({
+      where: { pacienteId, cerradaEn: null },
+      data: { cerradaEn: new Date() },
+    });
     const ev = await tx.evaluacion.create({
       data: {
         sedeId: paciente.sedeId,
@@ -304,4 +309,54 @@ export async function eliminarEvaluacion(evaluacionId: string) {
 
   revalidatePath(`/pacientes/${existente.pacienteId}`);
   redirect(`/pacientes/${existente.pacienteId}`);
+}
+
+/**
+ * Cierra o reabre una evaluación. Cerrada, ya no sirve para crear ni renovar
+ * paquetes; los paquetes ya creados desde ella no cambian. Solo puede haber
+ * una abierta por paciente: para reabrir, la otra debe estar cerrada.
+ */
+export async function cambiarCierreEvaluacion(
+  evaluacionId: string,
+  cerrar: boolean,
+): Promise<{ error?: string }> {
+  const user = await requireUser();
+
+  const existente = await prisma.evaluacion.findUnique({
+    where: { id: evaluacionId },
+    select: { sedeId: true, pacienteId: true, evaluadorId: true },
+  });
+  if (!existente) throw new Error("La evaluación no existe.");
+  await assertSedeAccess(user, existente.sedeId);
+  await assertAccesoClinico(user, existente.pacienteId);
+  if (!esAutorClinico(user, existente.evaluadorId)) {
+    throw new Error("Solo puede cerrar las evaluaciones que usted registró.");
+  }
+
+  const error = await prisma.$transaction(async (tx) => {
+    if (!cerrar) {
+      const otra = await tx.evaluacion.findFirst({
+        where: {
+          pacienteId: existente.pacienteId,
+          cerradaEn: null,
+          id: { not: evaluacionId },
+        },
+        select: { fecha: true },
+      });
+      if (otra) {
+        return `El paciente ya tiene abierta la evaluación del ${fecha(otra.fecha)}. Ciérrala antes de reabrir esta.`;
+      }
+    }
+    await tx.evaluacion.update({
+      where: { id: evaluacionId },
+      data: { cerradaEn: cerrar ? new Date() : null },
+    });
+    return null;
+  });
+  if (error) return { error };
+
+  revalidatePath(`/pacientes/${existente.pacienteId}`);
+  revalidatePath(`/pacientes/${existente.pacienteId}/evaluaciones/${evaluacionId}`);
+  revalidatePath("/sesiones", "layout");
+  return {};
 }

@@ -44,6 +44,8 @@ import {
   PASO_GRILLA_MIN,
 } from "./horario";
 import { fecha as fmtFecha } from "@/lib/utils";
+import { plantillaSemanal } from "./renovacion";
+import { paqueteRenovable, evaluacionAbierta } from "./renovable";
 
 export type ActionState = { ok: boolean; error?: string };
 
@@ -109,6 +111,8 @@ function mensajePaciente(c: FranjaCita): string {
 const crearPaqueteSchema = z.object({
   pacienteId: z.string().min(1, "Seleccione un paciente."),
   evaluacionId: z.string().min(1, "Seleccione la evaluación del paciente."),
+  // Paquete que se renueva (opcional): aplica de nuevo su evaluación.
+  renovarDe: z.string().optional(),
   precio: z.coerce.number().min(0, "Precio inválido."),
   lineas: z.string().min(1, "Agende las terapias del tratamiento."),
   observacion: z.string().optional(),
@@ -165,10 +169,27 @@ export async function crearPaquete(
   // La evaluación debe ser del paciente y de la sede: de ella sale el tratamiento.
   const evaluacion = await prisma.evaluacion.findFirst({
     where: { id: data.evaluacionId, pacienteId: data.pacienteId, sedeId },
-    select: { tratamiento: { select: { terapiaId: true } } },
+    select: { cerradaEn: true, tratamiento: { select: { terapiaId: true } } },
   });
   if (!evaluacion) {
     return { ok: false, error: "La evaluación no corresponde al paciente." };
+  }
+  if (evaluacion.cerradaEn) {
+    return {
+      ok: false,
+      error: "La evaluación está cerrada: elige o registra una evaluación abierta.",
+    };
+  }
+  if (data.renovarDe) {
+    const r = await paqueteRenovable(data.renovarDe);
+    if ("error" in r) return { ok: false, error: r.error };
+    if (
+      r.paquete.sedeId !== sedeId ||
+      r.paquete.pacienteId !== data.pacienteId ||
+      r.paquete.evaluacionId !== data.evaluacionId
+    ) {
+      return { ok: false, error: "La renovación no corresponde a este paquete." };
+    }
   }
   const delTratamiento = new Set(evaluacion.tratamiento.map((t) => t.terapiaId));
 
@@ -415,18 +436,6 @@ export async function crearPaquete(
   revalidatePath("/sesiones");
   revalidatePath(`/pacientes/${data.pacienteId}`);
   redirect(`/sesiones/${nuevoId}`);
-}
-
-/** Plantilla semanal (primer horario visto por día) para la renovación. */
-function plantillaSemanal(
-  sesiones: { fecha: Date; horaInicio: string }[],
-): { dia: number; hora: string }[] {
-  const porDia = new Map<number, string>();
-  for (const s of sesiones) {
-    const dia = s.fecha.getDay();
-    if (!porDia.has(dia)) porDia.set(dia, s.horaInicio);
-  }
-  return [...porDia.entries()].map(([dia, hora]) => ({ dia, hora }));
 }
 
 /* ── registrarAsistencia ─────────────────────────────────── */
@@ -747,8 +756,10 @@ export async function anularPaquete(
 
 /* ── renovarPaquete ──────────────────────────────────────── */
 
-// Crea un paquete nuevo con las mismas terapias para el mismo paciente,
-// generando sus sesiones con el horario semanal de cada terapia.
+// Solo para paquetes antiguos sin evaluación cuyo paciente no tiene una
+// evaluación abierta: crea un paquete nuevo con las mismas terapias, generando
+// sus sesiones con el horario semanal de cada una. Si hay evaluación abierta,
+// se renueva desde "Nuevo paquete" (?renovar=) aplicándola.
 export async function renovarPaquete(
   _prev: ActionState,
   formData: FormData,
@@ -786,6 +797,9 @@ export async function renovarPaquete(
   });
   if (!origen) return { ok: false, error: "Paquete no encontrado." };
   await assertSedeAccess(user, origen.sedeId);
+  if (origen.evaluacionId || (await evaluacionAbierta(origen.pacienteId))) {
+    return { ok: false, error: "Este paquete se renueva desde la evaluación del paciente." };
+  }
 
   // Solo se puede renovar si TODAS las sesiones del paquete actual ya tienen
   // asistencia registrada (no quedan pendientes). Evita crear un paquete nuevo

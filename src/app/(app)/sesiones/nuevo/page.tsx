@@ -1,9 +1,15 @@
 import { notFound } from "next/navigation";
-import { requireUser, requireActiveSede, esTerapeuta } from "@/lib/session";
+import {
+  requireUser,
+  requireActiveSede,
+  esTerapeuta,
+  puedeVerPagos,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PageHeader, ButtonLink, Card, EmptyState } from "@/components/ui";
 import { fecha, nombreCompleto } from "@/lib/utils";
 import { claveFecha } from "../horario";
+import { paqueteRenovable } from "../renovable";
 import NuevoPaqueteForm from "./form";
 
 export default async function NuevoPaquetePage({
@@ -14,7 +20,23 @@ export default async function NuevoPaquetePage({
   if (esTerapeuta(user)) notFound();
   const sedeId = await requireActiveSede(user);
 
-  const { evaluacion: evaluacionParam, pacienteId: pacienteParam } = await searchParams;
+  const {
+    evaluacion: evaluacionParam,
+    pacienteId: pacienteParam,
+    renovar: renovarParam,
+  } = await searchParams;
+
+  // Renovación: aplica de nuevo la evaluación (abierta) del paquete anterior.
+  const renovable =
+    typeof renovarParam === "string" ? await paqueteRenovable(renovarParam) : null;
+  const errorRenovacion =
+    renovable && "error" in renovable
+      ? renovable.error
+      : renovable && renovable.paquete.sedeId !== sedeId
+        ? "El paquete es de otra sede. Cambia a su sede para renovarlo."
+        : null;
+  const renovacion =
+    renovable && "paquete" in renovable && !errorRenovacion ? renovable.paquete : null;
 
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
@@ -35,10 +57,11 @@ export default async function NuevoPaquetePage({
           apellidoMaterno: true,
         },
       }),
-      // Solo las evaluaciones que sugieren un tratamiento sirven para agendar.
+      // Solo las evaluaciones abiertas que sugieren un tratamiento sirven para agendar.
       prisma.evaluacion.findMany({
         where: {
           sedeId,
+          cerradaEn: null,
           paciente: { estado: "ACTIVO" },
           tratamiento: { some: {} },
         },
@@ -119,10 +142,17 @@ export default async function NuevoPaquetePage({
       }),
     ]);
 
-  const evaluacionInicial =
-    typeof evaluacionParam === "string"
+  const evaluacionInicial = renovacion
+    ? evaluaciones.find((e) => e.id === renovacion.evaluacionId)
+    : typeof evaluacionParam === "string"
       ? evaluaciones.find((e) => e.id === evaluacionParam)
       : undefined;
+  // La evaluación puede no tener tratamiento o el paciente estar inactivo.
+  const errorFormulario =
+    errorRenovacion ??
+    (renovacion && !evaluacionInicial
+      ? "La evaluación del paquete no sugiere terapias o el paciente está inactivo. Edita la evaluación o crea el paquete desde otra."
+      : null);
   // Desde la ficha del paciente (?pacienteId=): lo preselecciona; el form toma
   // su evaluación más reciente. Solo si es un paciente activo de la sede.
   const pacienteInicial =
@@ -134,24 +164,41 @@ export default async function NuevoPaquetePage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Nuevo paquete"
-        subtitle="Elige la evaluación del paciente y agenda cada terapia de su tratamiento."
+        title={renovacion ? "Renovar paquete" : "Nuevo paquete"}
+        subtitle={
+          renovacion
+            ? renovacion.evaluacionAnteriorFecha
+              ? `Se aplica la nueva evaluación del ${fecha(renovacion.evaluacionFecha)} (reemplazó a la del ${fecha(renovacion.evaluacionAnteriorFecha)}). Revisa terapeutas y sesiones antes de crear el paquete.`
+              : `Se aplica de nuevo la evaluación del ${fecha(renovacion.evaluacionFecha)}. Revisa terapeutas y sesiones antes de crear el paquete.`
+            : "Elige la evaluación del paciente y agenda cada terapia de su tratamiento."
+        }
         actions={
-          <ButtonLink href="/sesiones" variant="secondary">
+          <ButtonLink
+            href={
+              typeof renovarParam === "string" ? `/sesiones/${renovarParam}` : "/sesiones"
+            }
+            variant="secondary"
+          >
             Volver
           </ButtonLink>
         }
       />
 
-      {typeof evaluacionParam === "string" && !evaluacionInicial && (
+      {errorFormulario && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          La evaluación indicada no está disponible en la sede activa (o no
-          sugiere terapias). Cambia a la sede del paciente para programar su
-          paquete.
+          {errorFormulario}
         </p>
       )}
 
-      {pacientes.length === 0 ? (
+      {!renovable && typeof evaluacionParam === "string" && !evaluacionInicial && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          La evaluación indicada no está disponible: es de otra sede, está
+          cerrada o no sugiere terapias. Cambia a la sede del paciente o usa
+          una evaluación abierta.
+        </p>
+      )}
+
+      {errorFormulario ? null : pacientes.length === 0 ? (
         <EmptyState message="No hay pacientes activos en esta sede. Registre un paciente antes de crear un paquete." />
       ) : terapeutas.length === 0 ? (
         <EmptyState message="No hay terapeutas activos en esta sede. Registre un terapeuta en Configuración › Terapeutas antes de crear un paquete." />
@@ -174,6 +221,16 @@ export default async function NuevoPaquetePage({
             }))}
             pacienteInicial={pacienteInicial}
             evaluacionInicialId={evaluacionInicial?.id}
+            renovacion={
+              renovacion
+                ? {
+                    paqueteId: renovacion.id,
+                    precio: puedeVerPagos(user) ? renovacion.precio : null,
+                    observacion: renovacion.observacion ?? "",
+                    sugerencias: renovacion.sugerencias,
+                  }
+                : undefined
+            }
             terapias={terapias.map((t) => ({
               id: t.id,
               nombre: t.nombre,

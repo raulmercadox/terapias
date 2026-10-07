@@ -72,6 +72,7 @@ export default async function PacienteDetallePage({
         select: {
           id: true,
           fecha: true,
+          cerradaEn: true,
           evaluador: { select: { nombres: true, apellidos: true } },
           tratamiento: {
             orderBy: { orden: "asc" },
@@ -289,6 +290,11 @@ export default async function PacienteDetallePage({
                       >
                         Evaluación del {fecha(ev.fecha)}
                       </Link>
+                      {ev.cerradaEn && (
+                        <span className="ml-2">
+                          <Badge>Cerrada</Badge>
+                        </span>
+                      )}
                       {ev.evaluador && (
                         <p className="text-xs text-slate-500">
                           {`${ev.evaluador.nombres} ${ev.evaluador.apellidos}`.trim()}
