@@ -9,40 +9,77 @@ import fotoSesion from "./_fotos/sesion.webp";
 // Portada pública de terapias.codart.pe. Vive fuera del grupo (app), así que no
 // pasa por requireUser() y la ve cualquier visitante. El panel está en /panel.
 //
-// El texto describe solo lo que el sistema hace hoy. En particular NO se anuncia
-// envío automático por WhatsApp: los recordatorios abren el chat con el mensaje
-// escrito (click-to-send), no se mandan solos.
+// El texto describe solo lo que el sistema hace hoy. En particular, WhatsApp
+// funciona como click-to-send: el sistema abre el chat con el mensaje escrito y
+// la persona lo envía; no se manda nada solo. Tampoco se anuncia que la firma
+// del terapeuta salga en los documentos impresos: por ahora solo se registra.
 
 const FUNCIONALIDADES = [
   {
     icono: "📋",
     titulo: "Fichas clínicas a tu medida",
     texto:
-      "Historia clínica, evaluaciones periódicas e informe de avance con los ítems que cada centro define en su propia plantilla. Sirve igual para terapia física que psicológica.",
+      "Historia clínica, evaluación e informe de avance sobre plantillas que tu centro arma: agrega, quita y reordena campos y secciones. Sirve igual para terapia física que psicológica.",
+  },
+  {
+    icono: "✏️",
+    titulo: "Marcas sobre el cuerpo",
+    texto:
+      "Señala a mano alzada la zona del dolor sobre una silueta de frente y espalda, o sobre cualquier imagen que subas. Funciona con mouse, dedo o lápiz.",
+  },
+  {
+    icono: "🩺",
+    titulo: "De la evaluación al tratamiento",
+    texto:
+      "La evaluación cierra con el tratamiento sugerido: qué terapias, cuántas sesiones y con qué frecuencia. De ahí sale el paquete, sin volver a escribirlo.",
   },
   {
     icono: "📅",
     titulo: "Agenda por terapeuta",
     texto:
-      "Vista consolidada de horarios libres y ocupados de todo el equipo, con control de asistencia en cada sesión.",
+      "Horarios libres y ocupados de todo el equipo, terapias individuales o grupales con cupo, y feriados, vacaciones y refrigerios que bloquean la agenda solos.",
   },
   {
     icono: "🎟️",
     titulo: "Paquetes de sesiones",
     texto:
-      "Controla cuántas sesiones quedan y recibe el aviso de los paquetes por renovar antes de que se agoten.",
+      "Un paquete con varias terapias, cada una con su terapeuta, a un solo precio. Reprograma sesiones, recibe el aviso de los que están por agotarse y renuévalos con el tratamiento de la evaluación.",
+  },
+  {
+    icono: "📞",
+    titulo: "Seguimiento de interesados",
+    texto:
+      "Quien llamó pidiendo información o vino a la evaluación y no volvió entra a una bandeja de pendientes por contactar, con el historial de cada llamada.",
+  },
+  {
+    icono: "💬",
+    titulo: "Recordatorios por WhatsApp",
+    texto:
+      "Recordatorios de cita, avisos de cobro y recibos: un clic abre WhatsApp con el mensaje ya escrito, listo para enviar.",
   },
   {
     icono: "💵",
     titulo: "Pagos y cobranza",
     texto:
-      "Recibo interno imprimible, lista de pagos vencidos y por vencer, y descarga de todo en Excel cuando la necesites.",
+      "Recibo imprimible, lista de pagos vencidos y por vencer, y descarga de todo en Excel cuando la necesites.",
   },
   {
     icono: "📈",
     titulo: "Seguimiento del progreso",
     texto:
       "Compara los informes de avance de un paciente y observa su evolución a lo largo del tratamiento.",
+  },
+  {
+    icono: "🧑‍⚕️",
+    titulo: "Acceso para cada terapeuta",
+    texto:
+      "Cada terapeuta entra con su usuario: ve su agenda y sus pacientes, registra asistencia, evaluaciones e informes, y guarda su firma digital. Tú decides qué más puede hacer.",
+  },
+  {
+    icono: "🖨️",
+    titulo: "Documentos con tu logo",
+    texto:
+      "Recibos, historias clínicas, evaluaciones e informes de avance salen con el logo de tu centro, listos para imprimir o guardar en PDF.",
   },
   {
     icono: "🏢",
@@ -70,6 +107,49 @@ const RAZONES = [
   },
 ];
 
+// Precios mensuales en soles, sin IGV. Misma estructura que landingchat.codart.pe
+// (mensualidad + implementación única, pago por transferencia/Yape/Plin). Todos
+// los planes traen todas las funcionalidades: solo cambian sedes y terapeutas.
+const PLANES = [
+  {
+    nombre: "Consultorio",
+    precio: 129,
+    implementacion: 290,
+    para: "Para el terapeuta independiente o el consultorio pequeño.",
+    incluye: [
+      "1 sede",
+      "Hasta 3 terapeutas",
+      "Pacientes ilimitados",
+      "Todas las funcionalidades",
+    ],
+  },
+  {
+    nombre: "Centro",
+    precio: 249,
+    implementacion: 490,
+    destacado: true,
+    para: "Para el centro con un equipo de terapeutas en marcha.",
+    incluye: [
+      "1 sede",
+      "Hasta 10 terapeutas",
+      "Pacientes ilimitados",
+      "Todas las funcionalidades",
+    ],
+  },
+  {
+    nombre: "Multisede",
+    precio: 449,
+    implementacion: 890,
+    para: "Para el centro que atiende en varios locales.",
+    incluye: [
+      "Hasta 3 sedes (sede adicional S/ 79/mes)",
+      "Hasta 30 terapeutas",
+      "Pacientes ilimitados",
+      "Soporte prioritario",
+    ],
+  },
+];
+
 export default async function PortadaPage() {
   const usuario = await getCurrentUser();
 
@@ -90,6 +170,9 @@ export default async function PortadaPage() {
             </a>
             <a href="#porque" className="hover:text-slate-900">
               Por qué Codart
+            </a>
+            <a href="#precios" className="hover:text-slate-900">
+              Precios
             </a>
             <a href="#contacto" className="hover:text-slate-900">
               Contacto
@@ -137,7 +220,8 @@ export default async function PortadaPage() {
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-lg text-slate-600 lg:mx-0">
               Fichas clínicas que configuras a tu medida, agenda por terapeuta, paquetes de
-              sesiones y control de pagos. Con todas tus sedes en una sola cuenta.
+              sesiones, seguimiento de interesados y control de pagos. Con todas tus sedes
+              en una sola cuenta.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row lg:justify-start">
               <a
@@ -168,13 +252,13 @@ export default async function PortadaPage() {
       </section>
 
       {/* ── Funcionalidades ───────────────────────────────────────────────── */}
-      <section id="funcionalidades" className="mx-auto max-w-6xl px-6 py-20">
+      <section id="funcionalidades" className="mx-auto max-w-6xl scroll-mt-16 px-6 py-20">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight">
             Todo el centro, en un solo lugar
           </h2>
           <p className="mt-3 text-slate-600">
-            Desde la primera evaluación del paciente hasta lo que queda por cobrar.
+            Desde la primera llamada del interesado hasta lo que queda por cobrar.
           </p>
         </div>
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -194,7 +278,7 @@ export default async function PortadaPage() {
       </section>
 
       {/* ── Por qué ───────────────────────────────────────────────────────── */}
-      <section id="porque" className="border-y border-slate-100 bg-slate-50">
+      <section id="porque" className="scroll-mt-16 border-y border-slate-100 bg-slate-50">
         <div className="mx-auto max-w-6xl px-6 py-20">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold tracking-tight">Pensado para tu centro</h2>
@@ -218,6 +302,74 @@ export default async function PortadaPage() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── Precios ───────────────────────────────────────────────────────── */}
+      <section id="precios" className="mx-auto max-w-6xl scroll-mt-16 px-6 pt-20">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight">Planes y precios</h2>
+          <p className="mt-3 text-slate-600">
+            Precios mensuales en soles, sin IGV. Todos los planes incluyen todas las
+            funcionalidades; solo cambia el tamaño de tu centro.
+          </p>
+        </div>
+        <div className="mt-12 grid gap-6 lg:grid-cols-3">
+          {PLANES.map((p) => (
+            <div
+              key={p.nombre}
+              className={
+                p.destacado
+                  ? "relative flex flex-col rounded-2xl border-2 border-codart-600 p-7 shadow-lg"
+                  : "relative flex flex-col rounded-2xl border border-slate-200 p-7"
+              }
+            >
+              {p.destacado && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-codart-600 px-3 py-1 text-xs font-semibold text-white">
+                  El más elegido
+                </span>
+              )}
+              <h3 className="text-lg font-semibold text-slate-900">{p.nombre}</h3>
+              <p className="mt-1 text-sm text-slate-500">{p.para}</p>
+              <p className="mt-6">
+                <span className="text-4xl font-extrabold tracking-tight">S/ {p.precio}</span>
+                <span className="text-sm text-slate-500"> /mes sin IGV</span>
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Implementación única: S/ {p.implementacion}
+              </p>
+              <ul className="mt-6 grid flex-1 content-start gap-3 text-sm text-slate-700">
+                {p.incluye.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <span aria-hidden="true" className="font-bold text-codart-600">
+                      ✓
+                    </span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="#contacto"
+                className={
+                  p.destacado
+                    ? "mt-8 rounded-lg bg-codart-600 px-5 py-3 text-center font-semibold text-white hover:bg-codart-700"
+                    : "mt-8 rounded-lg border border-slate-300 px-5 py-3 text-center font-semibold text-slate-800 hover:bg-slate-50"
+                }
+              >
+                Solicitar una demo
+              </a>
+            </div>
+          ))}
+        </div>
+        <div className="mx-auto mt-10 max-w-3xl space-y-2 text-center text-sm text-slate-500">
+          <p>
+            La implementación toma de 3 a 5 días hábiles e incluye crear tus sedes y usuarios,
+            configurar las plantillas de tus fichas clínicas y capacitar a tu equipo.
+          </p>
+          <p>
+            Usuarios administrativos sin límite. Pago por transferencia, Yape o Plin. Sin
+            contratos de permanencia.
+          </p>
         </div>
       </section>
 
